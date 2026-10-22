@@ -1,5 +1,8 @@
 ﻿param(
-  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\AutoSwitch')
+  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\AutoSwitch'),
+  [switch]$NoLaunch,
+  [switch]$NoDesktopShortcut,
+  [switch]$NoAutoStart
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,24 +83,75 @@ $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Au
 New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
 $iconPath = Join-Path $InstallDir 'AutoSwitch.ico'
 $iconLocation = if (Test-Path $iconPath) { "$iconPath,0" } else { "$NodePath,0" }
+$wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
+$launchTarget = '"' + $vbsPath + '"'
 
-$lnk = $shell.CreateShortcut((Join-Path $startMenuDir 'AutoSwitch.lnk'))
-$lnk.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
-$lnk.Arguments = '"' + $vbsPath + '"'
-$lnk.WorkingDirectory = $InstallDir
-$lnk.Description = 'AutoSwitch 每日积分领航'
-$lnk.IconLocation = $iconLocation
-$lnk.Save()
+function New-AppShortcut {
+  param([string]$Path, [string]$Target, [string]$Arguments, [string]$Description)
+  $shortcut = $shell.CreateShortcut($Path)
+  $shortcut.TargetPath = $Target
+  $shortcut.Arguments = $Arguments
+  $shortcut.WorkingDirectory = $InstallDir
+  $shortcut.Description = $Description
+  $shortcut.IconLocation = $iconLocation
+  $shortcut.Save()
+}
 
-$unlnk = $shell.CreateShortcut((Join-Path $startMenuDir '卸载 AutoSwitch.lnk'))
-$unlnk.TargetPath = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$unlnk.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'uninstall.ps1') + '"'
-$unlnk.WorkingDirectory = $InstallDir
-$unlnk.IconLocation = $iconLocation
-$unlnk.Save()
+New-AppShortcut -Path (Join-Path $startMenuDir 'AutoSwitch.lnk') -Target $wscript `
+  -Arguments $launchTarget -Description 'AutoSwitch 每日积分领航'
+New-AppShortcut -Path (Join-Path $startMenuDir '卸载 AutoSwitch.lnk') `
+  -Target (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+  -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'uninstall.ps1') + '"') `
+  -Description '卸载 AutoSwitch'
+
+if (-not $NoDesktopShortcut) {
+  $desktops = @()
+  foreach ($candidate in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:USERPROFILE 'Desktop'))) {
+    if (-not $candidate) { continue }
+    try { $desktop = (New-Item -ItemType Directory -Force -Path $candidate).FullName } catch { continue }
+    if ($desktops -contains $desktop) { continue }
+    $desktops += $desktop
+    New-AppShortcut -Path (Join-Path $desktop 'AutoSwitch.lnk') -Target $wscript `
+      -Arguments $launchTarget -Description 'AutoSwitch 每日积分领航'
+  }
+  foreach ($desktop in $desktops) { Write-Host "桌面快捷方式：$(Join-Path $desktop 'AutoSwitch.lnk')" }
+}
+
+$startupDir = [Environment]::GetFolderPath('Startup')
+if (-not $NoAutoStart) {
+  $taskFailed = $true
+  try {
+    $taskOutput = (& $NodePath $CliPath task install 2>&1 | Out-String)
+    $taskFailed = ($LASTEXITCODE -ne 0)
+  } catch {
+    $taskFailed = $true
+  }
+  if ($taskFailed) {
+    Write-Host '计划任务注册失败，改用「启动」文件夹快捷方式实现开机自启。'
+    $silentVbs = Join-Path $InstallDir 'AutoSwitch-silent.vbs'
+    $silentCommand = '"' + $NodePath + '" "' + $CliPath + '" start --no-open'
+    $silentEscaped = $silentCommand.Replace('"', '""')
+    $silentText = "Set sh = CreateObject(""WScript.Shell"")" + "`r`n" + "sh.Run ""$silentEscaped"", 0, False" + "`r`n"
+    [System.IO.File]::WriteAllText($silentVbs, $silentText, $encoding)
+    New-AppShortcut -Path (Join-Path $startupDir 'AutoSwitch.lnk') -Target $wscript `
+      -Arguments ('"' + $silentVbs + '"') -Description 'AutoSwitch 开机自启'
+  } else {
+    Remove-Item (Join-Path $startupDir 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue
+    Write-Host '开机自启：计划任务 AutoSwitch（登录时静默启动，不弹浏览器）。'
+  }
+}
+
+if (-not $NoLaunch) {
+  try {
+    Start-Process -FilePath $wscript -ArgumentList $launchTarget -WorkingDirectory $InstallDir
+    Write-Host '已自动启动 AutoSwitch，面板地址 http://127.0.0.1:47871'
+  } catch {
+    Write-Host '自动启动失败，请双击桌面或开始菜单的 AutoSwitch。'
+  }
+}
 
 Write-Host ''
 Write-Host '安装完成。'
-Write-Host '开始菜单 → AutoSwitch 启动。'
+Write-Host '桌面 / 开始菜单 → AutoSwitch 启动。'
 Write-Host "数据目录：$env:LOCALAPPDATA\AutoSwitch"
 Write-Host "命令行：`"$NodePath`" `"$CliPath`" doctor"

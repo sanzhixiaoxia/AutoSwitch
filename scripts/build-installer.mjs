@@ -132,7 +132,7 @@ function buildSetup(stage) {
     "RebootMode=N",
     "InstallPrompt=",
     "DisplayLicense=",
-    "FinishMessage=AutoSwitch has been installed.",
+    "FinishMessage=AutoSwitch has been installed. Desktop shortcut, logon auto-start and app launch are enabled by default. Panel: http://127.0.0.1:47871",
     `TargetName=${SETUP}`,
     "FriendlyName=AutoSwitch Setup",
     "AppLaunched=install.cmd",

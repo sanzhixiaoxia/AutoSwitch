@@ -15,7 +15,10 @@ try {
 } catch {}
 try { Unregister-ScheduledTask -TaskName 'AutoSwitch' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
 Remove-Item (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\AutoSwitch') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path ([Environment]::GetFolderPath('Desktop')) 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue
+foreach ($desktop in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:USERPROFILE 'Desktop'))) {
+  if ($desktop) { Remove-Item (Join-Path $desktop 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue }
+}
 Set-Location $env:TEMP
 Start-Sleep -Milliseconds 500
 for ($i = 0; $i -lt 10; $i++) {

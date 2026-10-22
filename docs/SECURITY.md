@@ -25,6 +25,8 @@ AutoSwitch 原名 CreditPilot。首次运行 AutoSwitch 时，如果 `%LOCALAPPD
 
 安装版升级时会停止旧版进程、移除旧版开始菜单和 `CreditPilot` 计划任务；旧程序目录不会自动删除，可运行旧版卸载器处理。旧数据目录也不会自动删除；确认新版本可用后可手动清理。
 
+安装版默认写的是**当前用户**范围内的东西：`%LOCALAPPDATA%\Programs\AutoSwitch`、桌面与开始菜单快捷方式、`HKCU` 登录时计划任务，安装结束还会拉起本机服务。全部不需要管理员权限，也不写机器级（`HKLM`）配置；不想接受时可用 `install.ps1 -NoLaunch -NoAutoStart -NoDesktopShortcut`，卸载会移除计划任务与三处快捷方式。开机自启用的是 `wscript.exe` 静默启动器 `%LOCALAPPDATA%\AutoSwitch\start-autoswitch.vbs`，内容只有本机 Node 与 CLI 路径，`--no-open` 不弹浏览器。
+
 ## 网络边界
 
 - 服务只绑定 `127.0.0.1`，不会监听局域网地址。

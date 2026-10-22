@@ -21,7 +21,7 @@
 | **客户端切换** | 可选把 Trae / Qoder 客户端登录切到任意已保存账号，切前自动保存当前登录 |
 | **浏览器登录** | Qoder / Qoder CN 支持设备码登录，生成独立账号，不改变客户端当前登录 |
 | **本地面板** | 总览、账号、记录、设置；浅色/深色；领取进度与失败原因可见 |
-| **开机自启** | 一条命令注册 Windows 登录时计划任务，静默后台运行 |
+| **开机自启** | 安装版默认注册 Windows 登录时计划任务，静默后台运行；也可一条命令安装/移除 |
 | **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
 | **项目与更新** | 界面内置 GitHub 项目入口；从 GitHub Releases 检查更新，显示新版本与安装包下载 |
 | **备份与导出** | 密码加密的账号/设置备份与恢复；导出账号清单 JSON、领取记录 CSV（不含 token） |
@@ -64,6 +64,8 @@ autoswitch start
 首次启动默认开启自动领取，6 秒后检查一次；已经领过的账号只会记录「已领取」，不会重复领。
 
 ### 安装开机自启
+
+安装版已经在安装时注册好，需要手动管理时用：
 
 ```bash
 autoswitch task install
@@ -118,11 +120,17 @@ npm run dist
 | `AutoSwitch-Portable-<version>.zip` | 便携版，解压后双击 `Start AutoSwitch.vbs`，数据目录与安装版共用 |
 | `*.sha256` | 对应产物的 SHA-256 |
 
-安装版会创建开始菜单快捷方式和卸载入口。安装过程会停止正在运行的旧版/开发版 AutoSwitch，账号库和领取记录保留在 `%LOCALAPPDATA%\AutoSwitch`。卸载默认保留数据；只有输入 `YES` 才会删除账号与记录。
+安装版默认三件事：创建**桌面**和开始菜单快捷方式、注册当前用户登录时静默启动的**开机自启计划任务**、安装结束**立即启动** AutoSwitch 并打开面板。安装过程会停止正在运行的旧版/开发版 AutoSwitch，账号库和领取记录保留在 `%LOCALAPPDATA%\AutoSwitch`。卸载默认保留数据，但会移除计划任务和桌面/开始菜单/启动文件夹快捷方式；只有输入 `YES` 才会删除账号与记录。
 
-安装包没有代码签名，首次运行可能触发 SmartScreen 提示；安装包本身使用 Windows 自带的 IExpress 制作。安装器结束时会弹出一个确认框，点击确定即可。
+不想接受默认行为时，用脚本方式安装并带上开关：
 
-安装器**不会**自动注册开机自启；需要时在面板「设置」里点击「安装开机自启」，或运行安装目录下的 `node.exe app\bin\autoswitch.mjs task install`。
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1 -NoLaunch -NoAutoStart -NoDesktopShortcut
+```
+
+计划任务注册失败时，安装器会在「启动」文件夹放一个 `AutoSwitch.lnk` 兜底实现开机自启；随时可以用面板「设置」或 `node.exe app\bin\autoswitch.mjs task install|status|uninstall` 管理。
+
+安装包没有代码签名，首次运行可能触发 SmartScreen 提示；安装包本身使用 Windows 自带的 IExpress 制作。安装器结束时会弹出一个确认框，点击确定即可（IExpress 没有可选勾选框，所以「启动软件」就是默认行为）。
 
 ### GitHub Actions 自动打包
 
