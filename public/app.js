@@ -10,7 +10,11 @@ const app = {
   logProvider: "",
   loginTimer: null,
   online: true,
+  update: null,
+  updateError: null,
 };
+
+const PROJECT_URL = "https://github.com/sanzhixiaoxia/AutoSwitch";
 
 const PROVIDER_META = {
   trae: { label: "Trae CN", short: "Trae", avatar: "TR", color: "#2f6fed" },
@@ -217,6 +221,38 @@ async function refreshData({ logs = true, silent = false } = {}) {
   }
 }
 
+async function loadCachedUpdate() {
+  try {
+    const data = await api("/api/update");
+    if (data.checked) {
+      app.update = data;
+      app.updateError = null;
+      if (app.route === "settings") render();
+    }
+  } catch {}
+}
+
+async function runUpdateCheck() {
+  if (app.busy) return;
+  setBusy(true, "正在检查 GitHub Releases…");
+  try {
+    const data = await api("/api/update/check", { method: "POST" });
+    app.update = data.update;
+    app.updateError = null;
+    const update = app.update;
+    toast(
+      update?.hasUpdate ? `发现新版本 v${update.latest}` : update?.hasRelease ? `已是最新版本 v${update.latest}` : "项目还没有发布版本",
+      update?.hasUpdate ? "warn" : "ok",
+    );
+  } catch (error) {
+    app.updateError = error.message;
+    toast(error.message, "bad");
+  } finally {
+    setBusy(false);
+    render();
+  }
+}
+
 function renderError(message) {
   const content = $("#content");
   if (!content) return;
@@ -252,6 +288,8 @@ function render() {
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.route === app.route));
   $("#navAccounts").textContent = accounts.length || "";
   $("#versionText").textContent = `v${app.state.app.version}`;
+  const projectLink = $("#projectLink");
+  if (projectLink) projectLink.href = app.state.app.repoUrl || PROJECT_URL;
   const autoMini = $("#autoMini");
   autoMini.classList.toggle("on", Boolean(scheduler.autoClaim && scheduler.running));
   const autoText = autoMini.querySelector("strong");
@@ -522,6 +560,56 @@ function renderRecords() {
     </table></div>`;
 }
 
+function renderUpdateCard(info) {
+  const update = app.update;
+  const state = app.updateError
+    ? { cls: "bad", label: "检查失败" }
+    : !update?.checked
+      ? { cls: "idle", label: "未检查" }
+      : update.hasUpdate
+        ? { cls: "info", label: "有新版本" }
+        : update.hasRelease
+          ? { cls: "ok", label: "已是最新" }
+          : { cls: "idle", label: "暂无发布" };
+  const latest = update?.latest ? `v${update.latest}` : "—";
+  const checked = update?.checkedAt ? fmtLocal(update.checkedAt) : "—";
+  let body;
+  if (app.updateError) {
+    body = `<div class="info-box warn">${icon("alert")}<div><strong>检查失败</strong><br />${esc(app.updateError)}</div></div>`;
+  } else if (update?.hasUpdate) {
+    const setup = update.downloads?.setup;
+    const portable = update.downloads?.portable;
+    body = `<div class="info-box">${icon("gift")}<div><strong>发现新版本 v${esc(update.latest)}</strong>${update.notes ? `<div class="update-notes">${esc(update.notes)}</div>` : ""}<div class="release-links">
+      ${setup ? `<a class="btn small primary" href="${esc(setup.url)}" target="_blank" rel="noopener noreferrer">${icon("download")}Windows 安装包</a>` : ""}
+      ${portable ? `<a class="btn small" href="${esc(portable.url)}" target="_blank" rel="noopener noreferrer">${icon("download")}便携版</a>` : ""}
+      <a class="btn small ghost" href="${esc(update.releaseUrl)}" target="_blank" rel="noopener noreferrer">${icon("external")}Release</a>
+    </div></div></div>`;
+  } else if (update?.checked && update.hasRelease) {
+    body = `<div class="info-box">${icon("check")}<div>已是最新版本（v${esc(update.latest)}）${update.releaseUrl ? ` · <a href="${esc(update.releaseUrl)}" target="_blank" rel="noopener noreferrer">查看 Release</a>` : ""}</div></div>`;
+  } else if (update?.checked) {
+    body = `<div class="info-box">${icon("info")}<div>项目还没有发布版本。打 <span class="code-path">v*</span> 标签后 GitHub Actions 会自动构建并发布 Windows 安装包。</div></div>`;
+  } else {
+    body = `<div class="info-box">${icon("info")}<div>点击「检查更新」从 GitHub Releases 获取最新版本；只检查，不自动安装。</div></div>`;
+  }
+  const repoUrl = info.repoUrl || PROJECT_URL;
+  return `<section class="setting-card">
+    <div class="panel-head"><div class="panel-title">${icon("refresh")}<h2>关于与更新</h2></div><span class="badge ${state.cls}">${esc(state.label)}</span></div>
+    <div class="panel-body">
+      <div class="kv-list">
+        <div class="kv"><span>当前版本</span><strong>v${esc(info.version)}</strong></div>
+        <div class="kv"><span>项目地址</span><strong><a href="${esc(repoUrl)}" target="_blank" rel="noopener noreferrer">sanzhixiaoxia/AutoSwitch</a></strong></div>
+        <div class="kv"><span>最新版本</span><strong>${esc(latest)}</strong></div>
+        <div class="kv"><span>上次检查</span><strong>${esc(checked)}</strong></div>
+      </div>
+      ${body}
+      <div class="actions" style="display:flex;gap:8px">
+        <button class="btn primary" data-action="check-update" ${app.busy ? "disabled" : ""}>${icon("refresh")}检查更新</button>
+        <a class="btn" href="${esc(update?.releaseUrl || `${repoUrl}/releases`)}" target="_blank" rel="noopener noreferrer">${icon("external")}Releases</a>
+      </div>
+    </div>
+  </section>`;
+}
+
 function renderSettings() {
   const { config, scheduler, task, app: info, accounts } = app.state;
   const taskInstalled = Boolean(task?.installed);
@@ -580,6 +668,8 @@ function renderSettings() {
         </div>
       </div>
     </section>
+
+    ${renderUpdateCard(info)}
 
     <section class="setting-card">
       <div class="panel-head"><div class="panel-title">${icon("gift")}<h2>领取规则</h2></div><span class="tiny faint">官方活动</span></div>
@@ -1041,6 +1131,7 @@ function bindEvents() {
     if (action === "install-task") return installTask();
     if (action === "uninstall-task") return uninstallTask();
     if (action === "doctor") return showDoctor();
+    if (action === "check-update") return runUpdateCheck();
     if (action === "filter-type") {
       app.logType = target.dataset.type;
       return render();
@@ -1080,7 +1171,10 @@ function init() {
   bindEvents();
   const hash = location.hash.replace(/^#\/?/, "");
   app.route = ["overview", "accounts", "records", "settings"].includes(hash) ? hash : "overview";
-  refreshData().then(() => startPolling());
+  refreshData().then((ok) => {
+    if (ok) loadCachedUpdate();
+    startPolling();
+  });
 }
 
 init();

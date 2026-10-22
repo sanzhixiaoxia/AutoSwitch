@@ -34,6 +34,7 @@ src/store.mjs              配置 + 加密账号库
 src/log.mjs                claims.jsonl 与轮次汇总
 src/task.mjs               Windows 计划任务安装/移除/查询
 src/doctor.mjs             本机诊断
+src/update.mjs             检查 GitHub Releases（缓存 + 下载链接）
 src/risk.mjs               Qoder 设备风控请求头
 src/win/dpapi.mjs          DPAPI + Electron safeStorage 编解码
 src/win/paths.mjs          客户端探测、进程控制、启动
@@ -237,7 +238,17 @@ Session Storage
 | GET | `/api/logs?limit=&types=` | 记录 |
 | PUT | `/api/config` | `autoClaim`、`intervalMinutes`、`claimDelayMs`、`port` |
 | POST | `/api/task/install` / `uninstall` | 开机自启 |
+| GET | `/api/update` | 读取缓存的更新检查结果 |
+| POST | `/api/update/check` | 强制检查 GitHub 最新 Release |
 | POST | `/api/doctor` | 本机诊断 |
+
+## 检查更新与 CI
+
+- `src/update.mjs` 请求 `https://api.github.com/repos/sanzhixiaoxia/AutoSwitch/releases/latest`，把结果写入数据目录的 `update.json`，缓存 6 小时；`POST /api/update/check` 强制刷新。
+- 版本比较只取 major.minor.patch；Release 的 asset 只接受 `github.com` 的 HTTPS 下载地址，并从中筛选 Setup `.exe` 与便携版 `.zip`。
+- Windows 上优先调用系统 `curl.exe`（Schannel 使用系统证书和代理），失败再回退 Node `fetch`；不发送 token 或账号数据。
+- `.github/workflows/windows-build.yml` 在 Windows runner 上运行测试和 `npm run dist`，上传 Actions Artifacts；`v*` 标签额外创建 GitHub Release 并上传 Setup、便携版与 SHA-256。
+- 应用内只检查并展示下载链接，不自动安装。
 
 ## 扩展新平台
 
@@ -262,7 +273,7 @@ Session Storage
 node --test
 ```
 
-覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、DPAPI/safeStorage 编解码、加密账号库、日志汇总、HTTP Host/CSRF/CSP 防护、token 不出 API。
+覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、DPAPI/safeStorage 编解码、加密账号库、日志汇总、更新版本比较/Release 摘要、HTTP Host/CSRF/CSP 防护、token 不出 API。
 
 ## 协议来源与致谢
 

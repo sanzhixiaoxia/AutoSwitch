@@ -4,6 +4,9 @@
 
 > 仓库：<https://github.com/sanzhixiaoxia/AutoSwitch> · 原名 CreditPilot
 
+[![Windows Build](https://github.com/sanzhixiaoxia/AutoSwitch/actions/workflows/windows-build.yml/badge.svg)](https://github.com/sanzhixiaoxia/AutoSwitch/actions/workflows/windows-build.yml)
+[![GitHub release](https://img.shields.io/github/v/release/sanzhixiaoxia/AutoSwitch?label=release)](https://github.com/sanzhixiaoxia/AutoSwitch/releases/latest)
+
 > 不依赖 Electron、不需要安装任何 npm 运行时依赖，只用 Node 内置模块。所有账号凭据留在本机，不上传。
 
 ---
@@ -20,6 +23,7 @@
 | **本地面板** | 总览、账号、记录、设置；浅色/深色；领取进度与失败原因可见 |
 | **开机自启** | 一条命令注册 Windows 登录时计划任务，静默后台运行 |
 | **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
+| **项目与更新** | 界面内置 GitHub 项目入口；从 GitHub Releases 检查更新，显示新版本与安装包下载 |
 
 ---
 
@@ -114,6 +118,29 @@ npm run dist
 
 安装器**不会**自动注册开机自启；需要时在面板「设置」里点击「安装开机自启」，或运行安装目录下的 `node.exe app\bin\autoswitch.mjs task install`。
 
+### GitHub Actions 自动打包
+
+[`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) 在 Windows runner 上运行：
+
+- push 到 `main` / Pull Request / 手动触发：运行 21 个测试，构建 Setup 和便携版 ZIP，上传 Actions Artifacts。
+- push `v*` 标签：额外创建 GitHub Release，并上传 Setup、便携版 ZIP 和 `.sha256`。
+
+发布新版本时先更新 `package.json` 的版本号，再打同名标签：
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+### 检查更新
+
+面板「设置 → 关于与更新」可以检查 GitHub Releases；侧边栏也有项目地址入口。
+
+- 只查询最新 Release，不自动下载、不自动安装；发现新版本时提供 Setup / 便携版下载链接和 Release 页面。
+- 结果缓存 6 小时；点击「检查更新」会强制刷新。
+- 本机 Node 可能不信任系统代理的根证书，更新检查优先使用 Windows 自带 `curl.exe`（系统证书/代理），失败时回退 Node `fetch`。
+- 检查只访问 `https://api.github.com/repos/sanzhixiaoxia/AutoSwitch/releases/latest`，不发送账号、token 或使用数据。
+
 ## 账号从哪里来
 
 | 平台 | 本机导入 | 浏览器登录 | 说明 |
@@ -156,7 +183,7 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 
 - 网页服务只监听 `127.0.0.1`，校验 Host 头，写操作要求自定义 CSRF 头；不返回 token。
 - 账号库密钥由 Windows DPAPI 保护；换 Windows 用户或迁移到另一台电脑后无法直接解密，需要重新登录/导入。
-- 没有遥测、广告或第三方上传。网络请求只发往 `openapi.qoder.sh`、`openapi.qoder.com.cn`、`qoder.com(.cn)`、`api.trae.cn`。
+- 没有遥测、广告或第三方上传。网络请求只发往 `openapi.qoder.sh`、`openapi.qoder.com.cn`、`qoder.com(.cn)`、`api.trae.cn`，以及检查更新时的 `api.github.com`。
 - 详细威胁模型见 [docs/SECURITY.md](docs/SECURITY.md)。
 
 ---
@@ -183,7 +210,7 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 ## 开发
 
 ```bash
-node --test                 # 18 个单元测试
+node --test                 # 21 个单元测试
 node bin/autoswitch.mjs doctor --network
 ```
 

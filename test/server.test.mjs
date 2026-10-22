@@ -106,6 +106,12 @@ test("本地 API：防 DNS 重绑定、CSRF 校验、状态不含 token", async 
     });
     assert.equal(missing.status, 404);
 
+    const update = await fetch(`http://127.0.0.1:${port}/api/update`);
+    assert.equal(update.status, 200);
+    const updateBody = await update.json();
+    assert.equal(updateBody.checked, false);
+    assert.equal(updateBody.projectUrl, "https://github.com/sanzhixiaoxia/AutoSwitch");
+
     const badHost = await rawRequest(port, { path: "/api/state", host: "evil.example" });
     assert.equal(badHost.status, 403);
 

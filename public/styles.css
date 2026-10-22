@@ -295,6 +295,49 @@ body {
   font-size: 12px;
 }
 
+.project-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.project-link:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.project-link .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.update-notes {
+  max-height: 130px;
+  margin-top: 6px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.release-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.release-links a {
+  text-decoration: none;
+}
+
 .auto-mini strong {
   margin-left: auto;
   color: var(--text-2);
@@ -1889,7 +1932,8 @@ td.time-cell {
   .sidebar-note,
   .auto-mini span,
   .auto-mini strong,
-  .version {
+  .version,
+  .project-link span {
     display: none;
   }
   .nav-item {
@@ -1901,6 +1945,10 @@ td.time-cell {
   }
   .auto-mini {
     justify-content: center;
+  }
+  .project-link {
+    justify-content: center;
+    padding-inline: 0;
   }
   .sidebar {
     padding-inline: 10px;

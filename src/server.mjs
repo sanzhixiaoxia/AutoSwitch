@@ -7,6 +7,7 @@ import { PROVIDERS, providerMeta, detectClients, importAll, adapterFor } from ".
 import { startDeviceLogin, pollDeviceLogin } from "./providers/qoder.mjs";
 import { taskStatus, installTask, uninstallTask } from "./task.mjs";
 import { runDoctor } from "./doctor.mjs";
+import { PROJECT_URL, checkForUpdate, readCachedUpdate } from "./update.mjs";
 import { readJsonBody, cleanMessage, localTime } from "./util.mjs";
 import { recordSystemEvent, writePidFile } from "./log.mjs";
 
@@ -113,6 +114,7 @@ function buildState(store, log, scheduler, port, task) {
       port,
       now: new Date().toISOString(),
       nowLocal: localTime(),
+      repoUrl: PROJECT_URL,
     },
     accounts,
     summary: {
@@ -198,6 +200,20 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
 
         if (pathname === "/api/state" && method === "GET") {
           return sendJson(response, 200, buildState(store, log, scheduler, port, refreshTask()));
+        }
+
+        if (pathname === "/api/update" && method === "GET") {
+          return sendJson(response, 200, { ok: true, ...readCachedUpdate(store.home, VERSION) });
+        }
+
+        if (pathname === "/api/update/check" && method === "POST") {
+          try {
+            const update = await checkForUpdate(store.home, VERSION, { force: true });
+            return sendJson(response, 200, { ok: true, update });
+          } catch (error) {
+            error.status = 502;
+            throw error;
+          }
         }
 
         if (pathname === "/api/import" && method === "POST") {

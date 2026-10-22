@@ -1,6 +1,6 @@
 {
   "name": "autoswitch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Trae / Qoder / Qoder CN 每日积分自动领取，多账号、本机加密存储、本地网页面板",
   "type": "module",
   "bin": {
