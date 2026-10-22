@@ -38,6 +38,13 @@ AutoSwitch 原名 CreditPilot。首次运行 AutoSwitch 时，如果 `%LOCALAPPD
   - `https://api.github.com/repos/sanzhixiaoxia/AutoSwitch/releases/latest`（仅在手动/启动后读取缓存时检查更新）
 - 没有遥测、广告、远程配置或第三方上传。
 
+## 备份与导出
+
+- 备份使用用户密码派生密钥（scrypt，随机 salt）和 AES-256-GCM 加密，密码不落盘；备份文件包含账号 token，必须与密码分开保管。
+- 备份只包含账号与设置，不包含领取记录和 Trae 文件快照。恢复会用备份账号替换当前账号，保留本地领取记录，并把恢复前的账号库/配置/日志复制到 `backups/rollback-*`。
+- 账号清单 JSON 与领取 CSV 来自脱敏数据，不含 token；CSV 对公式前缀做了转义。
+- 备份/恢复/导出都由本机服务处理，不上传第三方。
+
 ## 检查更新
 
 「设置 → 关于与更新」会读取 GitHub Releases 的公开 API。请求由本机服务发出，不携带账号 token、cookie 或使用数据；结果缓存在数据目录的 `update.json` 中 6 小时，点击「检查更新」会强制刷新。更新检查只显示版本和下载链接，不会自动下载或执行安装包。Windows 上优先使用系统 `curl.exe`（系统证书/代理），失败时回退 Node `fetch`。

@@ -560,8 +560,133 @@ function renderRecords() {
     </table></div>`;
 }
 
-function renderUpdateCard(info) {
-  const update = app.update;
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function filenameFromDisposition(value, fallback) {
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(String(value || ""));
+  if (!match) return fallback;
+  try {
+    return decodeURIComponent(match[1].replaceAll('"', "").trim());
+  } catch {
+    return fallback;
+  }
+}
+
+function toBase64(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunk = 0x8000;
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+function openBackupModal() {
+  showModal({
+    title: "创建加密备份",
+    subtitle: "账号与设置会使用密码加密；恢复时需要同一密码。",
+    iconName: "download",
+    body: `<div class="field stack">
+        <div class="field-label"><strong>备份密码</strong><span>至少 8 位，请妥善保存</span></div>
+        <input class="input" id="backupPassword" type="password" autocomplete="new-password" placeholder="至少 8 位" style="width:100%;margin-top:8px" />
+      </div>
+      <div class="info-box" style="margin-top:12px">${icon("info")}<div>备份包含账号与设置，不包含领取记录和 Trae 文件快照。备份文件含 token，请像密码一样保管。</div></div>`,
+    footer: `<button class="btn" data-close>取消</button><button class="btn primary" data-backup-do>创建并下载</button>`,
+    onMount: (modal, close) => {
+      const input = modal.querySelector("#backupPassword");
+      const button = modal.querySelector("[data-backup-do]");
+      input.focus();
+      button.addEventListener("click", async () => {
+        const password = input.value;
+        if (password.length < 8) return toast("备份密码至少 8 位", "warn");
+        button.disabled = true;
+        button.textContent = "正在创建…";
+        try {
+          const response = await fetch("/api/backup", {
+            method: "POST",
+            headers: { "x-autoswitch": "1", "content-type": "application/json" },
+            body: JSON.stringify({ password }),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => null);
+            throw new Error(error?.error || `创建备份失败（HTTP ${response.status}）`);
+          }
+          const blob = await response.blob();
+          const filename = filenameFromDisposition(response.headers.get("content-disposition"), "AutoSwitch-backup.asbackup");
+          downloadBlob(blob, filename);
+          toast(`备份已下载：${filename}`, "ok");
+          close();
+        } catch (error) {
+          toast(error.message, "bad");
+          button.disabled = false;
+          button.textContent = "创建并下载";
+        }
+      });
+    },
+  });
+}
+
+function openRestoreModal() {
+  showModal({
+    title: "恢复备份",
+    subtitle: "恢复会替换当前账号与设置；本地领取记录保留，并自动创建回滚副本。",
+    iconName: "alert",
+    tone: "warn",
+    body: `<div class="field stack">
+        <div class="field-label"><strong>备份文件</strong><span>.asbackup</span></div>
+        <input class="input" id="restoreFile" type="file" accept=".asbackup,.json" style="width:100%;height:auto;margin-top:8px;padding:7px" />
+      </div>
+      <div class="field stack" style="margin-top:12px">
+        <div class="field-label"><strong>备份密码</strong></div>
+        <input class="input" id="restorePassword" type="password" autocomplete="current-password" style="width:100%;margin-top:8px" />
+      </div>
+      <div class="info-box warn" style="margin-top:12px">${icon("alert")}<div>Trae 客户端切换快照不会随备份恢复；恢复后需要在客户端重新登录并导入，才能切换 Trae 账号。</div></div>`,
+    footer: `<button class="btn" data-close>取消</button><button class="btn danger" data-restore-do>确认覆盖并恢复</button>`,
+    onMount: (modal, close) => {
+      const fileInput = modal.querySelector("#restoreFile");
+      const passwordInput = modal.querySelector("#restorePassword");
+      const button = modal.querySelector("[data-restore-do]");
+      button.addEventListener("click", async () => {
+        const file = fileInput.files?.[0];
+        const password = passwordInput.value;
+        if (!file) return toast("请选择备份文件", "warn");
+        if (password.length < 8) return toast("请输入备份密码", "warn");
+        button.disabled = true;
+        button.textContent = "正在恢复…";
+        try {
+          const data = toBase64(await file.arrayBuffer());
+          const response = await fetch("/api/restore", {
+            method: "POST",
+            headers: { "x-autoswitch": "1", "content-type": "application/json" },
+            body: JSON.stringify({ password, data }),
+          });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(payload?.error || `恢复失败（HTTP ${response.status}）`);
+          close();
+          toast(`已恢复 ${payload.result.accounts} 个账号`, "ok");
+          app.state = payload.state;
+          await refreshData({ silent: true });
+        } catch (error) {
+          toast(error.message, "bad");
+          button.disabled = false;
+          button.textContent = "确认覆盖并恢复";
+        }
+      });
+    },
+  });
+}
+
+function renderUpdateCard(info) {  const update = app.update;
   const state = app.updateError
     ? { cls: "bad", label: "检查失败" }
     : !update?.checked
@@ -666,6 +791,23 @@ function renderSettings() {
           <button class="btn" data-action="import" ${app.busy ? "disabled" : ""}>${icon("download")}重新导入本机账号</button>
           <button class="btn" data-action="doctor" ${app.busy ? "disabled" : ""}>${icon("shield")}诊断</button>
         </div>
+      </div>
+    </section>
+
+    <section class="setting-card">
+      <div class="panel-head"><div class="panel-title">${icon("download")}<h2>备份与导出</h2></div><span class="tiny faint">密码加密</span></div>
+      <div class="panel-body">
+        <div class="info-box">${icon("shield")}<div>备份包含账号与设置，使用密码加密；不包含领取记录和 Trae 文件快照。备份文件含 token，请像密码一样保管。</div></div>
+        <div class="actions" style="display:flex;flex-wrap:wrap;gap:8px">
+          <button class="btn primary" data-action="create-backup" ${app.busy ? "disabled" : ""}>${icon("download")}创建加密备份</button>
+          <button class="btn" data-action="restore-backup" ${app.busy ? "disabled" : ""}>${icon("refresh")}恢复备份</button>
+        </div>
+        <div class="divider"></div>
+        <div class="actions" style="display:flex;flex-wrap:wrap;gap:8px">
+          <a class="btn" href="/api/export/accounts.json" download>${icon("external")}导出账号清单 JSON</a>
+          <a class="btn" href="/api/export/claims.csv" download>${icon("external")}导出领取记录 CSV</a>
+        </div>
+        <div class="tiny faint">导出文件不含 token，可安全查看或分享。恢复会覆盖账号与设置，本地领取记录保留。</div>
       </div>
     </section>
 
@@ -1132,6 +1274,8 @@ function bindEvents() {
     if (action === "uninstall-task") return uninstallTask();
     if (action === "doctor") return showDoctor();
     if (action === "check-update") return runUpdateCheck();
+    if (action === "create-backup") return openBackupModal();
+    if (action === "restore-backup") return openRestoreModal();
     if (action === "filter-type") {
       app.logType = target.dataset.type;
       return render();

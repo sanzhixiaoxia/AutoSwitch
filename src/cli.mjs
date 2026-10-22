@@ -10,6 +10,7 @@ import { createServer, openBrowser, VERSION } from "./server.mjs";
 import { importAll, PROVIDER_IDS, adapterFor, syncAll } from "./providers/index.mjs";
 import { startDeviceLogin, pollDeviceLogin, QODER_LABEL } from "./providers/qoder.mjs";
 import { runDoctor } from "./doctor.mjs";
+import { createBackup, restoreBackup, exportAccounts, exportClaimsCsv } from "./backup.mjs";
 import { installTask, uninstallTask, taskStatus } from "./task.mjs";
 import { localTime, sleep } from "./util.mjs";
 
@@ -28,6 +29,9 @@ const HELP = `AutoSwitch ${VERSION} — Trae / Qoder / Qoder CN 每日积分自�
   autoswitch login <qoder|qoder-cn>               浏览器设备码登录 Qoder
   autoswitch doctor [--network] [--json]          检查登录态、风控与接口
   autoswitch logs [--limit 100]                   查看领取记录
+  autoswitch backup <file> --password <p>         创建密码加密备份
+  autoswitch restore <file> --password <p> --yes  恢复备份（需先停止服务）
+  autoswitch export accounts|claims [--out <file>] 导出账号清单 / 领取记录 CSV
   autoswitch config [get|set <key> <value>]
   autoswitch task install|uninstall|status        开机自启计划任务
 
@@ -360,6 +364,59 @@ async function commandDoctor(args) {
   process.exitCode = result.ok ? 0 : 1;
 }
 
+function backupPassword(args) {
+  const password = args.password || process.env.AUTOSWITCH_BACKUP_PASSWORD;
+  if (!password) throw new Error("请用 --password 或 AUTOSWITCH_BACKUP_PASSWORD 提供备份密码（至少 8 位）");
+  return String(password);
+}
+
+async function commandBackup(args) {
+  const { store } = init();
+  const result = createBackup(store, backupPassword(args), VERSION);
+  const target = path.resolve(args._[0] || result.filename);
+  fs.writeFileSync(target, result.buffer, { mode: 0o600 });
+  console.log(`备份已写入 ${target}（${result.buffer.length} 字节，${result.accounts} 个账号）`);
+  console.log("备份包含账号与设置，不含领取记录和 Trae 文件快照；请妥善保管密码与文件。");
+}
+
+async function commandRestore(args) {
+  const file = args._[0];
+  if (!file) throw new Error("用法：autoswitch restore <file> --password <p> --yes");
+  if (args.yes !== true) throw new Error("恢复会覆盖当前账号与设置，请加 --yes 确认");
+  const { store, log } = init();
+  try {
+    const response = await fetch(`http://127.0.0.1:${store.config.port}/api/health`, { signal: AbortSignal.timeout(1200) });
+    if (response.ok) throw new Error("服务正在运行，请先运行 autoswitch stop 再恢复备份");
+  } catch (error) {
+    if (error.message.includes("服务正在运行")) throw error;
+  }
+  const data = fs.readFileSync(path.resolve(file));
+  const result = restoreBackup(store, data, backupPassword(args), { syncAll });
+  log.append({
+    type: "event",
+    at: new Date().toISOString(),
+    provider: "system",
+    status: "restore",
+    message: `已从备份恢复 ${result.accounts} 个账号`,
+    detail: { accounts: result.accounts, backupCreatedAt: result.backupCreatedAt, rollbackDir: result.rollbackDir },
+  });
+  console.log(`已恢复 ${result.accounts} 个账号`);
+  console.log(`恢复前回滚副本：${result.rollbackDir}`);
+  console.log("请重新启动 AutoSwitch 服务。");
+}
+
+async function commandExport(args) {
+  const type = args._[0];
+  const { store, log } = init();
+  let result;
+  if (type === "accounts") result = exportAccounts(store, VERSION);
+  else if (type === "claims") result = exportClaimsCsv(log);
+  else throw new Error("用法：autoswitch export accounts|claims [--out <file>]");
+  const target = path.resolve(args.out || result.filename);
+  fs.writeFileSync(target, result.content, { encoding: "utf8", mode: 0o600 });
+  console.log(`已导出 ${target}（${Buffer.byteLength(result.content)} 字节）`);
+}
+
 async function commandLogs(args) {
   const { log } = init();
   const entries = log.read(Number(args.limit) || 100);
@@ -458,6 +515,12 @@ export async function runCli(argv = process.argv.slice(2)) {
       return commandSwitch(args);
     case "login":
       return commandLogin(args);
+    case "backup":
+      return commandBackup(args);
+    case "restore":
+      return commandRestore(args);
+    case "export":
+      return commandExport(args);
     case "doctor":
       return commandDoctor(args);
     case "logs":

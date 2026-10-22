@@ -3,11 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { PROVIDERS, providerMeta, detectClients, importAll, adapterFor } from "./providers/index.mjs";
+import { PROVIDERS, providerMeta, detectClients, importAll, adapterFor, syncAll } from "./providers/index.mjs";
 import { startDeviceLogin, pollDeviceLogin } from "./providers/qoder.mjs";
 import { taskStatus, installTask, uninstallTask } from "./task.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { PROJECT_URL, checkForUpdate, readCachedUpdate } from "./update.mjs";
+import { createBackup, restoreBackup, exportAccounts, exportClaimsCsv } from "./backup.mjs";
 import { readJsonBody, cleanMessage, localTime } from "./util.mjs";
 import { recordSystemEvent, writePidFile } from "./log.mjs";
 
@@ -60,6 +61,18 @@ function sendText(response, status, text, contentType = "text/plain; charset=utf
     "Cache-Control": "no-store",
   });
   response.end(text);
+}
+
+function sendDownload(response, buffer, contentType, filename) {
+  const safeName = String(filename || "download.bin").replace(/[^A-Za-z0-9._-]/g, "_");
+  response.writeHead(200, {
+    ...SECURITY_HEADERS,
+    "Content-Type": contentType,
+    "Content-Length": buffer.length,
+    "Content-Disposition": `attachment; filename="${safeName}"`,
+    "Cache-Control": "no-store",
+  });
+  response.end(buffer);
 }
 
 function publicConfig(config) {
@@ -156,7 +169,7 @@ function routeAccountId(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function createServer({ store, log, engine, scheduler, port, taskStatusFn = taskStatus }) {
+export function createServer({ store, log, engine, scheduler, port, taskStatusFn = taskStatus, syncAllFn = syncAll }) {
   const taskCache = { at: 0, value: { supported: true, installed: false } };
   const refreshTask = (force = false) => {
     if (!force && Date.now() - taskCache.at < 60_000) return taskCache.value;
@@ -214,6 +227,51 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
             error.status = 502;
             throw error;
           }
+        }
+
+        if (pathname === "/api/backup" && method === "POST") {
+          const body = await readJsonBody(request);
+          try {
+            const result = createBackup(store, String(body.password || ""), VERSION);
+            return sendDownload(response, result.buffer, "application/octet-stream", result.filename);
+          } catch (error) {
+            error.status = 400;
+            throw error;
+          }
+        }
+
+        if (pathname === "/api/restore" && method === "POST") {
+          if (engine.busy) return sendJson(response, 409, { error: "领取任务正在执行，请稍后再恢复", code: "busy" });
+          const body = await readJsonBody(request, 12 * 1024 * 1024);
+          let result;
+          try {
+            const data = Buffer.from(String(body.data || ""), "base64");
+            result = restoreBackup(store, data, String(body.password || ""), { syncAll: syncAllFn });
+          } catch (error) {
+            error.status = 400;
+            throw error;
+          }
+          scheduler.applyConfig();
+          recordSystemEvent(log, {
+            status: "restore",
+            message: `已从备份恢复 ${result.accounts} 个账号`,
+            detail: { accounts: result.accounts, backupCreatedAt: result.backupCreatedAt, rollbackDir: result.rollbackDir },
+          });
+          return sendJson(response, 200, {
+            ok: true,
+            result,
+            state: buildState(store, log, scheduler, port, refreshTask()),
+          });
+        }
+
+        if (pathname === "/api/export/accounts.json" && method === "GET") {
+          const result = exportAccounts(store, VERSION);
+          return sendDownload(response, Buffer.from(result.content, "utf8"), "application/json; charset=utf-8", result.filename);
+        }
+
+        if (pathname === "/api/export/claims.csv" && method === "GET") {
+          const result = exportClaimsCsv(log);
+          return sendDownload(response, Buffer.from(result.content, "utf8"), "text/csv; charset=utf-8", result.filename);
         }
 
         if (pathname === "/api/import" && method === "POST") {

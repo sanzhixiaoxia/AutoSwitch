@@ -259,6 +259,12 @@ export class Store {
     return account;
   }
 
+  replaceAccounts(accounts) {
+    this.accounts = Array.isArray(accounts) ? accounts : [];
+    this.saveAccounts();
+    return this.accounts;
+  }
+
   markLiveActive(provider, uid) {
     let changed = false;
     for (const account of this.accounts) {

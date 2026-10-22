@@ -58,7 +58,15 @@ test("本地 API：防 DNS 重绑定、CSRF 校验、状态不含 token", async 
       return { ok: true, results: [{ accountId: "qoder:server-user", status: "claimed", name: "本地账号", message: "已领取" }] };
     },
   };
-  const app = createServer({ store, log, engine, scheduler, port: 0, taskStatusFn: () => ({ supported: true, installed: false }) });
+  const app = createServer({
+    store,
+    log,
+    engine,
+    scheduler,
+    port: 0,
+    taskStatusFn: () => ({ supported: true, installed: false }),
+    syncAllFn: () => {},
+  });
   let port;
   try {
     const started = await app.start();
@@ -111,6 +119,42 @@ test("本地 API：防 DNS 重绑定、CSRF 校验、状态不含 token", async 
     const updateBody = await update.json();
     assert.equal(updateBody.checked, false);
     assert.equal(updateBody.projectUrl, "https://github.com/sanzhixiaoxia/AutoSwitch");
+
+    const backupResponse = await fetch(`http://127.0.0.1:${port}/api/backup`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-autoswitch": "1" },
+      body: JSON.stringify({ password: "backup-password" }),
+    });
+    assert.equal(backupResponse.status, 200);
+    assert.match(backupResponse.headers.get("content-type"), /octet-stream/);
+    assert.match(backupResponse.headers.get("content-disposition"), /AutoSwitch-backup-.*\.asbackup/);
+    const backupBuffer = Buffer.from(await backupResponse.arrayBuffer());
+    assert.ok(backupBuffer.toString("utf8").includes("autoswitch-backup"));
+    assert.ok(!backupBuffer.toString("utf8").includes("SUPER-SECRET"));
+
+    const restoreResponse = await fetch(`http://127.0.0.1:${port}/api/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-autoswitch": "1" },
+      body: JSON.stringify({ password: "backup-password", data: backupBuffer.toString("base64") }),
+    });
+    assert.equal(restoreResponse.status, 200);
+    const restoreBody = await restoreResponse.json();
+    assert.equal(restoreBody.result.accounts, 1);
+    assert.equal(restoreBody.state.accounts.length, 1);
+    assert.ok(!JSON.stringify(restoreBody.state).includes("SUPER-SECRET"));
+
+    const accountsExport = await fetch(`http://127.0.0.1:${port}/api/export/accounts.json`);
+    assert.equal(accountsExport.status, 200);
+    const accountsText = await accountsExport.text();
+    assert.ok(!accountsText.includes("SUPER-SECRET"));
+    assert.equal(JSON.parse(accountsText).format, "autoswitch-accounts-export");
+
+    const claimsExport = await fetch(`http://127.0.0.1:${port}/api/export/claims.csv`);
+    assert.equal(claimsExport.status, 200);
+    const claimsBuffer = Buffer.from(await claimsExport.arrayBuffer());
+    assert.deepEqual([...claimsBuffer.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    const claimsText = claimsBuffer.toString("utf8").replace(/^\uFEFF/, "");
+    assert.ok(claimsText.includes('"时间","类型","平台"'));
 
     const badHost = await rawRequest(port, { path: "/api/state", host: "evil.example" });
     assert.equal(badHost.status, 403);

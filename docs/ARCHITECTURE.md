@@ -35,6 +35,7 @@ src/log.mjs                claims.jsonl 与轮次汇总
 src/task.mjs               Windows 计划任务安装/移除/查询
 src/doctor.mjs             本机诊断
 src/update.mjs             检查 GitHub Releases（缓存 + 下载链接）
+src/backup.mjs             密码加密备份/恢复、账号与记录导出
 src/risk.mjs               Qoder 设备风控请求头
 src/win/dpapi.mjs          DPAPI + Electron safeStorage 编解码
 src/win/paths.mjs          客户端探测、进程控制、启动
@@ -240,6 +241,10 @@ Session Storage
 | POST | `/api/task/install` / `uninstall` | 开机自启 |
 | GET | `/api/update` | 读取缓存的更新检查结果 |
 | POST | `/api/update/check` | 强制检查 GitHub 最新 Release |
+| POST | `/api/backup` | 创建密码加密备份（返回 `.asbackup` 下载） |
+| POST | `/api/restore` | 恢复备份（替换账号与设置，自动回滚副本） |
+| GET | `/api/export/accounts.json` | 导出脱敏账号清单 |
+| GET | `/api/export/claims.csv` | 导出领取记录 CSV |
 | POST | `/api/doctor` | 本机诊断 |
 
 ## 检查更新与 CI
@@ -249,6 +254,12 @@ Session Storage
 - Windows 上优先调用系统 `curl.exe`（Schannel 使用系统证书和代理），失败再回退 Node `fetch`；不发送 token 或账号数据。
 - `.github/workflows/windows-build.yml` 在 Windows runner 上运行测试和 `npm run dist`，上传 Actions Artifacts；`v*` 标签额外创建 GitHub Release 并上传 Setup、便携版与 SHA-256。
 - 应用内只检查并展示下载链接，不自动安装。
+
+## 备份格式
+
+`.asbackup` 是 JSON 信封：`format=autoswitch-backup`、`version=1`、`kdf=scrypt(N=32768,r=8,p=1)`、`cipher=aes-256-gcm`、salt/iv/tag 和 base64 密文。明文包含账号完整内部记录（含 token 与 Qoder auth 快照）和 `autoClaim/intervalMinutes/claimDelayMs`，不包含领取记录和 Trae 文件快照。账本仍以本机 DPAPI 密钥重新加密写入 `accounts.enc`，因此备份可跨机器恢复；恢复前会复制当前 `accounts.enc/config.json/claims.jsonl` 到 `backups/rollback-*`。
+
+导出接口不读取 token：账号清单来自 `Store.publicAccount()`，CSV 来自脱敏后的日志，并对以 `= + - @` 开头的单元格加前缀，避免 Excel 公式注入。
 
 ## 扩展新平台
 
@@ -273,7 +284,7 @@ Session Storage
 node --test
 ```
 
-覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、DPAPI/safeStorage 编解码、加密账号库、日志汇总、更新版本比较/Release 摘要、HTTP Host/CSRF/CSP 防护、token 不出 API。
+覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、DPAPI/safeStorage 编解码、加密账号库、日志汇总、更新版本比较/Release 摘要、加密备份/恢复、CSV 转义、HTTP Host/CSRF/CSP 防护、token 不出 API。
 
 ## 协议来源与致谢
 

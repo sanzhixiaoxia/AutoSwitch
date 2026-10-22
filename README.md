@@ -24,6 +24,7 @@
 | **开机自启** | 一条命令注册 Windows 登录时计划任务，静默后台运行 |
 | **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
 | **项目与更新** | 界面内置 GitHub 项目入口；从 GitHub Releases 检查更新，显示新版本与安装包下载 |
+| **备份与导出** | 密码加密的账号/设置备份与恢复；导出账号清单 JSON、领取记录 CSV（不含 token） |
 
 ---
 
@@ -93,6 +94,10 @@ autoswitch task uninstall
 | `autoswitch logs --limit 100` | 查看领取记录 |
 | `autoswitch config set intervalMinutes 120` | 修改检查间隔 |
 | `autoswitch task install` / `uninstall` / `status` | 开机自启管理 |
+| `autoswitch backup <file> --password <p>` | 创建密码加密备份 |
+| `autoswitch restore <file> --password <p> --yes` | 恢复备份（需先停止服务） |
+| `autoswitch export accounts --out <file>` | 导出账号清单 JSON |
+| `autoswitch export claims --out <file>` | 导出领取记录 CSV |
 
 加 `--json` 可获得机器可读输出（`claim` / `status` / `import` / `accounts` / `doctor` / `logs`）。
 
@@ -122,14 +127,14 @@ npm run dist
 
 [`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) 在 Windows runner 上运行：
 
-- push 到 `main` / Pull Request / 手动触发：运行 21 个测试，构建 Setup 和便携版 ZIP，上传 Actions Artifacts。
+- push 到 `main` / Pull Request / 手动触发：运行 23 个测试，构建 Setup 和便携版 ZIP，上传 Actions Artifacts。
 - push `v*` 标签：额外创建 GitHub Release，并上传 Setup、便携版 ZIP 和 `.sha256`。
 
 发布新版本时先更新 `package.json` 的版本号，再打同名标签：
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 ### 检查更新
@@ -140,6 +145,29 @@ git push origin v0.2.0
 - 结果缓存 6 小时；点击「检查更新」会强制刷新。
 - 本机 Node 可能不信任系统代理的根证书，更新检查优先使用 Windows 自带 `curl.exe`（系统证书/代理），失败时回退 Node `fetch`。
 - 检查只访问 `https://api.github.com/repos/sanzhixiaoxia/AutoSwitch/releases/latest`，不发送账号、token 或使用数据。
+
+## 备份与导出
+
+设置页「备份与导出」提供：
+
+- **创建加密备份**：把账号与设置打包，使用你设置的密码（scrypt + AES-256-GCM）加密，下载 `.asbackup` 文件。
+- **恢复备份**：选择备份文件和密码；恢复会替换当前账号与设置，保留本地领取记录，并在数据目录 `backups/rollback-*` 自动生成回滚副本。恢复前请先停止服务（面板恢复端点会自动处理运行中的服务）。
+- **导出账号清单 JSON**：账号 ID、平台、名称、到期时间、额度等，不含 token。
+- **导出领取记录 CSV**：时间、平台、账号、触发、结果、积分和说明，不含 token；CSV 已做公式注入转义，可直接用 Excel 打开。
+
+备份不包含领取记录和 Trae 文件快照。Qoder 的客户端登录快照在账号库里，会一起备份；Trae 切换需要重新在客户端登录并导入。备份文件包含账号 token，请像密码一样保管；密码不会保存在本机。
+
+CLI：
+
+```bash
+export AUTOSWITCH_BACKUP_PASSWORD='your-password'
+autoswitch backup ./AutoSwitch-backup.asbackup
+autoswitch stop
+autoswitch restore ./AutoSwitch-backup.asbackup --yes
+autoswitch start
+autoswitch export accounts --out ./accounts.json
+autoswitch export claims --out ./claims.csv
+```
 
 ## 账号从哪里来
 
@@ -210,7 +238,7 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 ## 开发
 
 ```bash
-node --test                 # 21 个单元测试
+node --test                 # 23 个单元测试
 node bin/autoswitch.mjs doctor --network
 ```
 
