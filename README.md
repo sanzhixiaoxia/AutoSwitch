@@ -1,0 +1,196 @@
+# AutoSwitch
+
+**Trae CN / Qoder / Qoder CN 每日积分自动领取。** 本机 Node 守护进程 + 本地网页，多账号、加密存储、可切换客户端登录。
+
+> 仓库：<https://github.com/sanzhixiaoxia/AutoSwitch> · 原名 CreditPilot
+
+> 不依赖 Electron、不需要安装任何 npm 运行时依赖，只用 Node 内置模块。所有账号凭据留在本机，不上传。
+
+---
+
+## 功能
+
+| | |
+| --- | --- |
+| **三平台领取** | Trae CN 每日签到、Qoder 国内版 / 国际版每日 100 Credits |
+| **多账号** | 每个平台可保存多个账号；领取直接走官方接口，不需要来回切客户端 |
+| **自动任务** | 默认开启，每 120 分钟检查一次；先查官方状态，只领没领的，幂等安全 |
+| **客户端切换** | 可选把 Trae / Qoder 客户端登录切到任意已保存账号，切前自动保存当前登录 |
+| **浏览器登录** | Qoder / Qoder CN 支持设备码登录，生成独立账号，不改变客户端当前登录 |
+| **本地面板** | 总览、账号、记录、设置；浅色/深色；领取进度与失败原因可见 |
+| **开机自启** | 一条命令注册 Windows 登录时计划任务，静默后台运行 |
+| **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
+
+---
+
+## 环境要求
+
+- Windows 10 / 11（当前版本依赖 Windows DPAPI、客户端的 Electron `safeStorage`）
+- Node.js **22.16+**
+> 从旧版 CreditPilot 升级：首次运行 AutoSwitch 时，如果 `%LOCALAPPDATA%\AutoSwitch` 不存在，会自动把 `%LOCALAPPDATA%\CreditPilot` 复制到新目录，旧目录保留。安装版会停止旧进程并清理旧的开始菜单和计划任务；旧程序目录可用旧卸载器移除。
+
+- 已安装并登录对应客户端：
+  - Trae CN（`TRAE SOLO CN` 等变体）
+  - Qoder 国际版（`Qoder`）
+  - Qoder 国内版（`Qoder CN`）
+
+---
+
+## 快速开始
+
+```bash
+git clone https://github.com/sanzhixiaoxia/AutoSwitch.git
+cd AutoSwitch
+
+# 无需 npm install，直接运行
+node bin/autoswitch.mjs start
+```
+
+浏览器打开 <http://127.0.0.1:47871>，点击 **导入本机账号**。三个客户端都登录过的话，会一次导入三个账号。
+
+也可以链接成全局命令：
+
+```bash
+npm link
+autoswitch start
+```
+
+首次启动默认开启自动领取，6 秒后检查一次；已经领过的账号只会记录「已领取」，不会重复领。
+
+### 安装开机自启
+
+```bash
+autoswitch task install
+```
+
+会在当前 Windows 用户下注册名为 `AutoSwitch` 的登录时计划任务，用 `wscript.exe` 静默拉起 Node 守护进程。移除：
+
+```bash
+autoswitch task uninstall
+```
+
+---
+
+## 常用命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `autoswitch start [--port 47871] [--no-open]` | 启动守护进程和网页面板 |
+| `autoswitch stop` | 停止本机服务（开机自启仍保留，下次登录会再启动） |
+| `autoswitch import` | 导入本机客户端当前登录的账号 |
+| `autoswitch status` | 只查询官方状态，不领取 |
+| `autoswitch claim` | 立即领取全部账号 |
+| `autoswitch claim --provider qoder-cn` | 只领取某个平台 |
+| `autoswitch claim --account "qoder:<uid>"` | 只领取某个账号 |
+| `autoswitch accounts` | 列出已保存账号与当前登录标记 |
+| `autoswitch switch "<账号ID>" --force` | 关闭客户端、切换登录、重新启动 |
+| `autoswitch login qoder` / `qoder-cn` | 浏览器设备码登录，添加独立账号 |
+| `autoswitch doctor [--network]` | 检查客户端、凭据、风控与接口 |
+| `autoswitch logs --limit 100` | 查看领取记录 |
+| `autoswitch config set intervalMinutes 120` | 修改检查间隔 |
+| `autoswitch task install` / `uninstall` / `status` | 开机自启管理 |
+
+加 `--json` 可获得机器可读输出（`claim` / `status` / `import` / `accounts` / `doctor` / `logs`）。
+
+---
+
+## 打包与安装（Windows）
+
+```bash
+npm run dist
+```
+
+产物在 `dist/`：
+
+| 文件 | 说明 |
+| --- | --- |
+| `AutoSwitch-Setup-<version>.exe` | 安装版，内置 Node.js 运行时，按当前用户安装到 `%LOCALAPPDATA%\Programs\AutoSwitch`，不需要管理员权限 |
+| `AutoSwitch-Portable-<version>.zip` | 便携版，解压后双击 `Start AutoSwitch.vbs`，数据目录与安装版共用 |
+| `*.sha256` | 对应产物的 SHA-256 |
+
+安装版会创建开始菜单快捷方式和卸载入口。安装过程会停止正在运行的旧版/开发版 AutoSwitch，账号库和领取记录保留在 `%LOCALAPPDATA%\AutoSwitch`。卸载默认保留数据；只有输入 `YES` 才会删除账号与记录。
+
+安装包没有代码签名，首次运行可能触发 SmartScreen 提示；安装包本身使用 Windows 自带的 IExpress 制作。安装器结束时会弹出一个确认框，点击确定即可。
+
+安装器**不会**自动注册开机自启；需要时在面板「设置」里点击「安装开机自启」，或运行安装目录下的 `node.exe app\bin\autoswitch.mjs task install`。
+
+## 账号从哪里来
+
+| 平台 | 本机导入 | 浏览器登录 | 说明 |
+| --- | --- | --- | --- |
+| Trae CN | ✅ 解密 `storage.json` | — | token 约 6 天有效，客户端刷新后重新导入 |
+| Qoder 国际版 | ✅ 解密 `auth.v1.dat` | ✅ 设备码 | 每台设备每天限领一个国际版账号 |
+| Qoder 国内版 | ✅ 解密 `auth.v1.dat` | ✅ 设备码 | 不受国际版设备名额限制 |
+
+点击「导入本机账号」会保存凭据的加密快照；Qoder 的客户端登录切换只需要 `auth.v1.dat`，Trae 的切换需要整份登录态快照（`trae-slots/<uid>/`，不含缓存目录）。切换前会自动保存当前客户端登录（即使你还没有手动导入），避免丢掉正在使用的账号。
+
+Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要先在客户端登录另一个账号，导入后再切换。浏览器登录的 Qoder 账号没有客户端登录快照，只能领取，不能切换客户端。
+
+> Trae 的 refresh 会轮转 refreshToken 并让正在运行的 IDE 掉线，因此本项目**不做 Trae 自动续期**，只在到期前提示重新登录并导入。
+
+---
+
+## 自动领取规则
+
+- Qoder / Qoder CN 的每日 100 Credits 按 **UTC+8 每天 10:00** 刷新，领取后 30 天有效，过期不补。
+- Trae 按自然日签到，积分与有效期以接口返回为准。
+- 每次检查先查活动/签到状态，只有可领取才调用领取接口；重复调用不会多领。
+- Qoder 国际版有一台设备每天一个账号的限制：本机当天已经有一个国际版账号领到后，其余国际版账号会显示「本机名额已用」，不会再请求领取。
+- 手动领取成功后，下一次自动检查会顺延一个检查周期。
+- 守护进程没运行、电脑睡眠或客户端凭据过期时不会自动领取。
+
+---
+
+## 数据与安全
+
+默认数据目录：`%LOCALAPPDATA%\AutoSwitch`（可用 `AUTOSWITCH_HOME` 覆盖）。
+
+| 文件 | 内容 |
+| --- | --- |
+| `accounts.enc` | 账号、token、Qoder auth 快照（AES-256-GCM） |
+| `store.key` | 加密密钥（Windows DPAPI 保护，仅当前用户可解） |
+| `claims.jsonl` | 领取与系统事件记录（不含 token） |
+| `config.json` | 自动领取、间隔、端口等 |
+| `trae-slots/` | Trae 整份登录态快照（切换用，包含客户端 Cookie 等，请保护数据目录） |
+| `start-autoswitch.vbs` | 开机自启的静默启动器 |
+
+- 网页服务只监听 `127.0.0.1`，校验 Host 头，写操作要求自定义 CSRF 头；不返回 token。
+- 账号库密钥由 Windows DPAPI 保护；换 Windows 用户或迁移到另一台电脑后无法直接解密，需要重新登录/导入。
+- 没有遥测、广告或第三方上传。网络请求只发往 `openapi.qoder.sh`、`openapi.qoder.com.cn`、`qoder.com(.cn)`、`api.trae.cn`。
+- 详细威胁模型见 [docs/SECURITY.md](docs/SECURITY.md)。
+
+---
+
+## 常见问题
+
+**Qoder 国际版查不到活动 / 没有可领取？**
+确认本机 Qoder 客户端安装完整（`resources/umid/runtime-info.exe` 存在），并运行 `autoswitch doctor`。国际版还需要在客户端登录过；设备风控身份由客户端组件生成。
+
+**Trae 返回 `code 9074` / 「当前参与用户太多」？**
+服务端对设备与账号的匹配有风控。程序会换设备号重试 3 次；仍失败会在下一轮再试。多账号场景建议每个账号单独导入并保持客户端登录过。
+
+**token 过期了怎么办？**
+在对应客户端重新登录，然后点击「导入本机账号」（或 `autoswitch import`）。Qoder 也可以用「浏览器登录」重新授权。非当前登录的账号不会自动续期。
+
+**切换失败？**
+切换会关闭客户端。请先保存工作，确认后使用 `--force`（网页端会弹确认框）。Trae 必须先导入过一次该账号，才有可恢复的登录态快照。
+
+**端口被占用？**
+`autoswitch start --port 47872`，或修改 `autoswitch config set port 47872` 后重启。
+
+---
+
+## 开发
+
+```bash
+node --test                 # 18 个单元测试
+node bin/autoswitch.mjs doctor --network
+```
+
+项目结构与协议说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，协议来源与致谢见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+---
+
+## 声明
+
+本项目是非官方社区工具，与 Trae、Qoder 官方没有隶属关系。领取依赖官方客户端接口，官方更新后可能失效；请自行评估账号风险并遵守服务条款。请只操作你自己拥有并已登录的账号。
