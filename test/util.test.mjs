@@ -9,6 +9,7 @@ test("北京时间日期与 Qoder 10:00 轮次边界", () => {
   assert.equal(traeRoundKey(Date.UTC(2026, 9, 21, 16, 30)), "2026-10-22");
   assert.equal(roundKey("qoder", Date.UTC(2026, 9, 22, 1, 0, 0)), "2026-10-21");
   assert.equal(roundKey("trae", Date.UTC(2026, 9, 21, 16, 0, 0)), "2026-10-22");
+  assert.equal(roundKey("workbuddy", Date.UTC(2026, 9, 21, 16, 0, 0)), "2026-10-22");
 });
 
 test("敏感信息脱敏", () => {

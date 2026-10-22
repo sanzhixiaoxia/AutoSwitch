@@ -1,7 +1,7 @@
 {
   "name": "autoswitch",
-  "version": "0.3.0",
-  "description": "Trae / Qoder / Qoder CN 每日积分自动领取，多账号、本机加密存储、本地网页面板",
+  "version": "0.4.0",
+  "description": "Trae / WorkBuddy / Qoder / Qoder CN 每日积分自动领取，多账号、本机加密存储、本地网页面板",
   "type": "module",
   "bin": {
     "autoswitch": "bin/autoswitch.mjs"

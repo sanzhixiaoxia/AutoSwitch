@@ -8,8 +8,8 @@ export const BACKUP_FORMAT = "autoswitch-backup";
 export const BACKUP_VERSION = 1;
 const KDF = { name: "scrypt", N: 32768, r: 8, p: 1 };
 const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
-const PROVIDERS = new Set(["qoder", "qoder-cn", "trae"]);
-const PROVIDER_LABEL = { qoder: "Qoder 国际版", "qoder-cn": "Qoder 国内版", trae: "Trae CN" };
+const PROVIDERS = new Set(["qoder", "qoder-cn", "trae", "workbuddy"]);
+const PROVIDER_LABEL = { qoder: "Qoder 国际版", "qoder-cn": "Qoder 国内版", trae: "Trae CN", workbuddy: "WorkBuddy" };
 
 const text = (value, max = 200) =>
   (typeof value === "string" ? value : typeof value === "number" ? String(value) : "").trim().slice(0, max);
@@ -154,7 +154,7 @@ function sanitizeAccount(raw) {
     refreshToken: text(raw.refreshToken, 8192),
     expiresAt: text(raw.expiresAt, 80) || null,
     refreshExpiresAt: text(raw.refreshExpiresAt, 80) || null,
-    source: raw.source === "device" ? "device" : "local",
+    source: ["device", "browser", "workbuddy-switch"].includes(raw.source) ? raw.source : "local",
     meta,
     snapshot: sanitizeSnapshot(provider, raw.snapshot),
     lastClaim: isPlainObject(raw.lastClaim) ? raw.lastClaim : null,

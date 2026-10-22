@@ -8,6 +8,7 @@ import { ClaimEngine } from "./claim.mjs";
 import { Scheduler } from "./scheduler.mjs";
 import { createServer, openBrowser, VERSION } from "./server.mjs";
 import { importAll, PROVIDER_IDS, adapterFor, syncAll } from "./providers/index.mjs";
+import { importFromSwitch as importWorkBuddyFromSwitch } from "./providers/workbuddy.mjs";
 import { startDeviceLogin, pollDeviceLogin, QODER_LABEL } from "./providers/qoder.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { createBackup, restoreBackup, exportAccounts, exportClaimsCsv } from "./backup.mjs";
@@ -24,6 +25,7 @@ const HELP = `AutoSwitch ${VERSION} — Trae / Qoder / Qoder CN 每日积分自�
   autoswitch claim [--provider <id>] [--account <id>] [--json]
   autoswitch status [--provider <id>] [--json]    只查询状态，不领取
   autoswitch import [--json]                      导入本机客户端当前登录的账号
+  autoswitch workbuddy-import [--json]            从 WorkBuddy Switch 导入网页授权账号
   autoswitch accounts [--json]                    列出已保存账号
   autoswitch switch <账号ID> [--force]            切换客户端登录（会关闭客户端）
   autoswitch login <qoder|qoder-cn>               浏览器设备码登录 Qoder
@@ -254,6 +256,34 @@ async function commandImport(args) {
     localTime(account.updatedAt),
   ]);
   if (rows.length) printRows(["账号 ID", "名称", "更新时间"], rows);
+}
+
+async function commandWorkBuddyImport(args) {
+  const { store, log } = init();
+  const result = importWorkBuddyFromSwitch(store);
+  log.append({
+    type: "event",
+    at: new Date().toISOString(),
+    provider: "workbuddy",
+    status: "import",
+    message: `WorkBuddy Switch 导入：新增 ${result.imported} 个，更新 ${result.updated} 个`,
+    detail: result,
+  });
+  if (args.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(`WorkBuddy 导入：新增 ${result.imported} 个，更新 ${result.updated} 个`);
+  if (result.errors?.length) {
+    for (const row of result.errors) console.log(`失败 ${row.uid || ""}: ${row.message}`);
+    process.exitCode = 1;
+  }
+  const rows = store.listAccounts().filter((account) => account.provider === "workbuddy").map((account) => [
+    account.id,
+    account.name || account.phone || account.uid,
+    localTime(account.expiresAt),
+  ]);
+  if (rows.length) printRows(["账号 ID", "名称", "凭据到期"], rows);
 }
 
 async function commandAccounts(args) {
@@ -509,6 +539,8 @@ export async function runCli(argv = process.argv.slice(2)) {
       return commandStatus(args);
     case "import":
       return commandImport(args);
+    case "workbuddy-import":
+      return commandWorkBuddyImport(args);
     case "accounts":
       return commandAccounts(args);
     case "switch":

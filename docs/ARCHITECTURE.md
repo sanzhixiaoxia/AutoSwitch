@@ -4,6 +4,7 @@
 
 ```text
 Trae 客户端 ─┐                       ┌─ 本机网页面板 (public/)
+WorkBuddy Switch 账号库 ─┤
 Qoder 客户端 ─┼─ 读取/解密登录态 ──▶  │       │ fetch JSON
 Qoder CN ────┘       │               │       ▼
                      ▼               │  HTTP API (src/server.mjs, 127.0.0.1)
@@ -41,6 +42,7 @@ src/win/dpapi.mjs          DPAPI + Electron safeStorage 编解码
 src/win/paths.mjs          客户端探测、进程控制、启动
 src/providers/qoder.mjs    Qoder / Qoder CN 适配器
 src/providers/trae.mjs     Trae CN 适配器
+src/providers/workbuddy.mjs WorkBuddy 适配器（从 WorkBuddy Switch 导入）
 src/providers/index.mjs    适配器注册与汇总
 public/                    本地单页面板
 test/                      node:test 单元测试
@@ -52,7 +54,7 @@ test/                      node:test 单元测试
 
 ## 账号模型
 
-账号 ID 固定为 `<provider>:<uid>`，`provider` 为 `trae`、`qoder`、`qoder-cn`。
+账号 ID 固定为 `<provider>:<uid>`，`provider` 为 `trae`、`workbuddy`、`qoder`、`qoder-cn`。
 
 账号记录（加密保存）：
 
@@ -87,7 +89,7 @@ test/                      node:test 单元测试
 ### 轮次
 
 - Qoder：UTC+8 每天 10:00 到次日 10:00 为一轮。`roundKey = dayKey(now - 10h)`。
-- Trae：自然日。`roundKey = dayKey(now)`。
+- Trae / WorkBuddy：自然日。`roundKey = dayKey(now)`。
 - 记录汇总按各自轮次计算，避免把 Trae 的「今天」和 Qoder 的「本轮」混在一起。
 
 ## Qoder 协议
@@ -213,6 +215,33 @@ Session Storage
 
 **不做 Trae 自动续期**：refresh 会轮换 refreshToken，使正在运行的 IDE 掉线。token 过期后在客户端重新登录并导入。
 
+## WorkBuddy
+
+WorkBuddy 5.x 客户端的 `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info` 中 `auth.accessToken` 是 `$wbEncrypted` 封装，本项目不提取客户端密钥，因此不做客户端 token 直读。账号来源改为 WorkBuddy Switch 的本地账号库：
+
+```text
+%APPDATA%\WorkBuddy Switch\vault.json
+  records[].apiEncrypted / encrypted  → Electron safeStorage 解密
+  session.account.{uid,nickname,phoneNumber}
+  session.auth.{accessToken,refreshToken,domain,expiresAt}
+```
+
+`apiEncrypted` 是 WorkBuddy Switch 通过官方网页登录保存的独立 API 会话；解密后取明文 token。导入只读，不修改 Switch。当前 WorkBuddy 客户端的 `account.uid` 从客户端 auth 文件明文读取，用于标记「当前登录」；客户端 token 本身仍是加密的。
+
+接口（host 取 `auth.domain`，通常 `www.codebuddy.cn`）：
+
+```text
+POST /v2/billing/meter/checkin-activity-status   {}  今日是否签到/连签/每日积分
+POST /v2/billing/meter/checkin-status            {}  旧版签到状态
+POST /v2/billing/meter/daily-checkin             {}  签到
+POST /billing/meter/get-user-resource-summary    {ProductCode:"p_tcaca"}  额度汇总
+POST /v2/billing/meter/get-user-resource         {...} 旧版额度包
+```
+
+签到请求带 `Authorization: Bearer`、`X-User-Id`、`X-Domain`、`X-Product: SaaS`、`User-Agent: CLI/2.108.1 CodeBuddy/2.108.1`；额度接口带 web 身份头。状态数据 `active/today_checked_in/streak_days/daily_credit`；额度 summary 的 `TotalCredits` 为剩余，`Packages[].CycleTotalCapacity` 求和为总额。
+
+**不自动刷新 token**：刷新会轮换 refreshToken，可能使 WorkBuddy Switch 持有的同一会话失效；过期后重新导入。暂不支持在 AutoSwitch 切换 WorkBuddy 客户端，也不包含成长中心旅行/盲盒。
+
 ## 调度
 
 - 默认开启，间隔 120 分钟；首次启动如果从未运行过，6 秒后检查一次。
@@ -242,6 +271,7 @@ Session Storage
 | GET | `/api/update` | 读取缓存的更新检查结果 |
 | POST | `/api/update/check` | 强制检查 GitHub 最新 Release |
 | POST | `/api/backup` | 创建密码加密备份（返回 `.asbackup` 下载） |
+| POST | `/api/workbuddy/import` | 从 WorkBuddy Switch 账号库导入网页授权账号 |
 | POST | `/api/restore` | 恢复备份（替换账号与设置，自动回滚副本） |
 | GET | `/api/export/accounts.json` | 导出脱敏账号清单 |
 | GET | `/api/export/claims.csv` | 导出领取记录 CSV |
@@ -284,7 +314,7 @@ Session Storage
 node --test
 ```
 
-覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、DPAPI/safeStorage 编解码、加密账号库、日志汇总、更新版本比较/Release 摘要、加密备份/恢复、CSV 转义、HTTP Host/CSRF/CSP 防护、token 不出 API。
+覆盖：Qoder 活动筛选、轮次边界、Trae tc 解密、设备号派生、Trae 快照保存/恢复、WorkBuddy 会话/签到/额度解析、DPAPI/safeStorage 编解码、加密账号库、日志汇总、更新版本比较/Release 摘要、加密备份/恢复、CSV 转义、HTTP Host/CSRF/CSP 防护、token 不出 API。
 
 ## 协议来源与致谢
 

@@ -1,6 +1,6 @@
 # AutoSwitch
 
-**Trae CN / Qoder / Qoder CN 每日积分自动领取。** 本机 Node 守护进程 + 本地网页，多账号、加密存储、可切换客户端登录。
+**Trae CN / WorkBuddy / Qoder / Qoder CN 每日积分自动领取。** 本机 Node 守护进程 + 本地网页，多账号、加密存储、可切换客户端登录。
 
 > 仓库：<https://github.com/sanzhixiaoxia/AutoSwitch> · 原名 CreditPilot
 
@@ -15,7 +15,7 @@
 
 | | |
 | --- | --- |
-| **三平台领取** | Trae CN 每日签到、Qoder 国内版 / 国际版每日 100 Credits |
+| **四平台领取** | Trae CN、WorkBuddy 每日签到，Qoder 国内版 / 国际版每日 100 Credits |
 | **多账号** | 每个平台可保存多个账号；领取直接走官方接口，不需要来回切客户端 |
 | **自动任务** | 默认开启，每 120 分钟检查一次；先查官方状态，只领没领的，幂等安全 |
 | **客户端切换** | 可选把 Trae / Qoder 客户端登录切到任意已保存账号，切前自动保存当前登录 |
@@ -38,6 +38,7 @@
   - Trae CN（`TRAE SOLO CN` 等变体）
   - Qoder 国际版（`Qoder`）
   - Qoder 国内版（`Qoder CN`）
+  - WorkBuddy（账号从已登录的 WorkBuddy Switch 本机账号库导入；WorkBuddy 客户端自身的 token 是加密封装，不直接读取）
 
 ---
 
@@ -127,14 +128,14 @@ npm run dist
 
 [`.github/workflows/windows-build.yml`](.github/workflows/windows-build.yml) 在 Windows runner 上运行：
 
-- push 到 `main` / Pull Request / 手动触发：运行 23 个测试，构建 Setup 和便携版 ZIP，上传 Actions Artifacts。
+- push 到 `main` / Pull Request / 手动触发：运行 26 个测试，构建 Setup 和便携版 ZIP，上传 Actions Artifacts。
 - push `v*` 标签：额外创建 GitHub Release，并上传 Setup、便携版 ZIP 和 `.sha256`。
 
 发布新版本时先更新 `package.json` 的版本号，再打同名标签：
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 ### 检查更新
@@ -174,6 +175,7 @@ autoswitch export claims --out ./claims.csv
 | 平台 | 本机导入 | 浏览器登录 | 说明 |
 | --- | --- | --- | --- |
 | Trae CN | ✅ 解密 `storage.json` | — | token 约 6 天有效，客户端刷新后重新导入 |
+| WorkBuddy | ✅ 从 WorkBuddy Switch 账号库导入 | — | 读取网页授权 token；客户端凭据加密，不直接读取 |
 | Qoder 国际版 | ✅ 解密 `auth.v1.dat` | ✅ 设备码 | 每台设备每天限领一个国际版账号 |
 | Qoder 国内版 | ✅ 解密 `auth.v1.dat` | ✅ 设备码 | 不受国际版设备名额限制 |
 
@@ -185,10 +187,20 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 
 ---
 
+## WorkBuddy 支持
+
+WorkBuddy 5.x 客户端把 accessToken 封装成 `$wbEncrypted`，AutoSwitch **不提取客户端密钥**。WorkBuddy 账号来自本机已登录的 **WorkBuddy Switch** 账号库（`%APPDATA%\WorkBuddy Switch\vault.json`）：
+
+- 在界面「添加账号 → WorkBuddy」或运行 `autoswitch workbuddy-import`，读取 WorkBuddy Switch 里通过官方网页授权保存的账号；只读，不修改 WorkBuddy Switch。
+- 导入后使用独立 token 自动领取 WorkBuddy 每日签到、查询积分和连签天数，并自动把当前客户端登录的账号标记为「当前登录」。
+- **不自动刷新 token**：刷新会轮换 refreshToken，可能让 WorkBuddy Switch 手里的同一会话失效；token 过期后重新从 WorkBuddy Switch 导入即可（WorkBuddy Switch 会刷新）。
+- 暂不支持在 AutoSwitch 内切换 WorkBuddy 客户端登录（请使用 WorkBuddy Switch）；成长中心旅行/盲盒等扩展奖励也不在本版本范围内。
+- 备份包含 WorkBuddy 账号 token（密码加密），恢复后可直接继续领取；导出文件不含 token。
+
 ## 自动领取规则
 
 - Qoder / Qoder CN 的每日 100 Credits 按 **UTC+8 每天 10:00** 刷新，领取后 30 天有效，过期不补。
-- Trae 按自然日签到，积分与有效期以接口返回为准。
+- Trae 与 WorkBuddy 按自然日签到，积分与连签天数以接口返回为准。
 - 每次检查先查活动/签到状态，只有可领取才调用领取接口；重复调用不会多领。
 - Qoder 国际版有一台设备每天一个账号的限制：本机当天已经有一个国际版账号领到后，其余国际版账号会显示「本机名额已用」，不会再请求领取。
 - 手动领取成功后，下一次自动检查会顺延一个检查周期。
@@ -211,7 +223,7 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 
 - 网页服务只监听 `127.0.0.1`，校验 Host 头，写操作要求自定义 CSRF 头；不返回 token。
 - 账号库密钥由 Windows DPAPI 保护；换 Windows 用户或迁移到另一台电脑后无法直接解密，需要重新登录/导入。
-- 没有遥测、广告或第三方上传。网络请求只发往 `openapi.qoder.sh`、`openapi.qoder.com.cn`、`qoder.com(.cn)`、`api.trae.cn`，以及检查更新时的 `api.github.com`。
+- 没有遥测、广告或第三方上传。网络请求只发往 `openapi.qoder.sh`、`openapi.qoder.com.cn`、`qoder.com(.cn)`、`api.trae.cn`、`www.codebuddy.cn` / `www.workbuddy.cn`，以及检查更新时的 `api.github.com`。
 - 详细威胁模型见 [docs/SECURITY.md](docs/SECURITY.md)。
 
 ---
@@ -238,7 +250,7 @@ Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要
 ## 开发
 
 ```bash
-node --test                 # 23 个单元测试
+node --test                 # 26 个单元测试
 node bin/autoswitch.mjs doctor --network
 ```
 

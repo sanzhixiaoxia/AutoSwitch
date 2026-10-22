@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { PROVIDERS, providerMeta, detectClients, importAll, adapterFor, syncAll } from "./providers/index.mjs";
 import { startDeviceLogin, pollDeviceLogin } from "./providers/qoder.mjs";
+import { importFromSwitch as importWorkBuddyFromSwitch } from "./providers/workbuddy.mjs";
 import { taskStatus, installTask, uninstallTask } from "./task.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { PROJECT_URL, checkForUpdate, readCachedUpdate } from "./update.mjs";
@@ -283,6 +284,28 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
             detail: result,
           });
           return sendJson(response, 200, { ok: true, result, state: buildState(store, log, scheduler, port, refreshTask()) });
+        }
+
+        if (pathname === "/api/workbuddy/import" && method === "POST") {
+          if (engine.busy) return sendJson(response, 409, { error: "领取任务正在执行，请稍后再导入", code: "busy" });
+          let result;
+          try {
+            result = importWorkBuddyFromSwitch(store);
+          } catch (error) {
+            error.status = 400;
+            throw error;
+          }
+          recordSystemEvent(log, {
+            status: "import",
+            provider: "workbuddy",
+            message: `WorkBuddy Switch 导入：新增 ${result.imported} 个，更新 ${result.updated} 个`,
+            detail: result,
+          });
+          return sendJson(response, 200, {
+            ok: true,
+            result,
+            state: buildState(store, log, scheduler, port, refreshTask()),
+          });
         }
 
         if (pathname === "/api/claim" && method === "POST") {

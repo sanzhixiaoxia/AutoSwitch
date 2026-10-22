@@ -46,7 +46,7 @@ export function traeRoundKey(now = Date.now()) {
 }
 
 export function roundKey(provider, now = Date.now()) {
-  return provider === "trae" ? traeRoundKey(now) : qoderRoundKey(now);
+  return provider === "trae" || provider === "workbuddy" ? traeRoundKey(now) : qoderRoundKey(now);
 }
 
 export function localTime(value = Date.now()) {

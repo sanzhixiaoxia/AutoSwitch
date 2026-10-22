@@ -277,3 +277,31 @@ export function qoderExeNames(provider) {
 export function traeExeNames(trae = detectTrae()) {
   return [`${trae.name}.exe`];
 }
+
+export function workBuddySwitchDir() {
+  return path.join(appDataDir(), "WorkBuddy Switch");
+}
+
+export function detectWorkBuddy() {
+  const local = localAppDataDir();
+  const exeCandidates = [
+    path.join(local, "Programs", "WorkBuddy", "WorkBuddy.exe"),
+    path.join(process.env.ProgramFiles || "C:\\Program Files", "WorkBuddy", "WorkBuddy.exe"),
+  ];
+  const exe = exeCandidates.find(exists) || null;
+  const authRoot = path.join(local, "CodeBuddyExtension", "Data", "Public", "auth");
+  const authFile = path.join(authRoot, "workbuddy-desktop.info");
+  const switchDir = workBuddySwitchDir();
+  const switchVault = path.join(switchDir, "vault.json");
+  return {
+    installed: Boolean(exe),
+    exe,
+    authFile,
+    authRoot,
+    signedIn: exists(authFile),
+    running: isRunning(["WorkBuddy.exe"]),
+    switchDir,
+    switchVault,
+    switchVaultExists: exists(switchVault),
+  };
+}

@@ -18,6 +18,7 @@ const PROJECT_URL = "https://github.com/sanzhixiaoxia/AutoSwitch";
 
 const PROVIDER_META = {
   trae: { label: "Trae CN", short: "Trae", avatar: "TR", color: "#2f6fed" },
+  workbuddy: { label: "WorkBuddy", short: "WorkBuddy", avatar: "WB", color: "#0d9488" },
   "qoder-cn": { label: "Qoder 国内版", short: "Qoder CN", avatar: "CN", color: "#0f9d76" },
   qoder: { label: "Qoder 国际版", short: "Qoder", avatar: "QO", color: "#7c5cff" },
 };
@@ -441,10 +442,18 @@ function renderAccountCard(account) {
   const meta = metaOf(account.provider);
   const expiry = expiryInfo(account);
   const status = account.today?.status || "pending";
+  const sourceLabel = {
+    "workbuddy-switch": "WorkBuddy Switch",
+    device: "浏览器登录",
+    browser: "浏览器登录",
+    local: "客户端导入",
+  }[account.source] || "客户端导入";
   const tags = [
     account.isActive ? `<span class="tag active">当前登录</span>` : "",
-    `<span class="tag">${account.source === "device" ? "浏览器登录" : "客户端导入"}</span>`,
-    account.hasSnapshot ? (account.isActive ? "" : `<span class="tag">可切换</span>`) : `<span class="tag">无切号快照</span>`,
+    `<span class="tag">${sourceLabel}</span>`,
+    account.hasSnapshot
+      ? account.isActive ? "" : `<span class="tag">可切换</span>`
+      : account.provider === "workbuddy" ? `<span class="tag">用 Switch 切换</span>` : `<span class="tag">无切号快照</span>`,
     account.expired ? `<span class="tag" style="color:var(--red);border-color:var(--red)">凭据过期</span>` : "",
   ]
     .filter(Boolean)
@@ -466,7 +475,7 @@ function renderAccountCard(account) {
     </div>
     <div class="account-actions">
       <button class="btn small primary" data-action="claim-account" data-id="${esc(account.id)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
-      <button class="btn small" data-action="switch-account" data-id="${esc(account.id)}" ${!account.hasSnapshot || account.isActive || app.busy ? "disabled" : ""} title="${account.isActive ? "已经是当前登录账号" : account.hasSnapshot ? "关闭并重启客户端以切换登录" : "浏览器登录的账号没有客户端快照"}">${icon("switch")}切换</button>
+      <button class="btn small" data-action="switch-account" data-id="${esc(account.id)}" ${!account.hasSnapshot || account.isActive || app.busy ? "disabled" : ""} title="${account.isActive ? "已经是当前登录账号" : account.hasSnapshot ? "关闭并重启客户端以切换登录" : account.provider === "workbuddy" ? "WorkBuddy 请使用 WorkBuddy Switch 切换" : "浏览器登录的账号没有客户端快照"}">${icon("switch")}切换</button>
       <button class="btn small danger icon-only" data-action="delete-account" data-id="${esc(account.id)}" title="移除账号" ${app.busy ? "disabled" : ""}>${icon("trash")}</button>
     </div>
   </div>`;
@@ -493,10 +502,12 @@ function renderAccounts() {
             ? list.map(renderAccountCard).join("")
             : `<div class="empty" style="min-height:120px;align-items:flex-start;text-align:left;padding:18px">
                 <div class="empty-icon" style="width:40px;height:40px;border-radius:12px">${icon("users")}</div>
-                <div><h3>${esc(meta.label)} 还没有账号</h3><p>在客户端登录后导入${provider === "trae" ? "。" : "，或使用浏览器登录 Qoder。"}</p></div>
+                <div><h3>${esc(meta.label)} 还没有账号</h3><p>${provider === "workbuddy" ? "WorkBuddy 客户端 token 是加密封装，请从 WorkBuddy Switch 导入网页授权账号。" : `在客户端登录后导入${provider === "trae" ? "。" : "，或使用浏览器登录 Qoder。"}`}</p></div>
                 <div class="actions">
-                  <button class="btn small" data-action="import">${icon("download")}导入本机</button>
-                  ${provider === "trae" ? "" : `<button class="btn small" data-action="login" data-provider="${esc(provider)}">${icon("plus")}浏览器登录</button>`}
+                  ${provider === "workbuddy"
+                    ? `<button class="btn small primary" data-action="import-workbuddy">${icon("download")}从 WorkBuddy Switch 导入</button>`
+                    : `<button class="btn small" data-action="import">${icon("download")}导入本机</button>`}
+                  ${provider === "qoder" || provider === "qoder-cn" ? `<button class="btn small" data-action="login" data-provider="${esc(provider)}">${icon("plus")}浏览器登录</button>` : ""}
                 </div>
               </div>`
         }
@@ -819,6 +830,7 @@ function renderSettings() {
         <div class="kv-list">
           <div class="kv"><span>Qoder / Qoder CN</span><strong>每天 10:00（UTC+8）刷新，100 Credits</strong></div>
           <div class="kv"><span>Trae CN</span><strong>每日签到，积分以接口返回为准</strong></div>
+          <div class="kv"><span>WorkBuddy</span><strong>每日签到，积分/连签以接口返回为准</strong></div>
           <div class="kv"><span>Qoder 国际版</span><strong>每台设备每天限领一个账号</strong></div>
           <div class="kv"><span>补领</span><strong>过期不补，凭据失效需重新登录</strong></div>
         </div>
@@ -903,6 +915,10 @@ function openLoginChooser() {
     </div>
     <div class="info-box" style="margin-top:12px">${icon("info")}<div>浏览器登录 token 约 30 天有效，过期后重新登录即可。也可以直接在客户端登录后使用「导入本机账号」。</div></div>`,
     onMount: (modal, closeModal) => {
+      modal.querySelector("[data-import-workbuddy]")?.addEventListener("click", () => {
+        closeModal();
+        importWorkBuddy();
+      });
       $$("[data-login-provider]", modal).forEach((button) =>
         button.addEventListener("click", () => {
           closeModal();
@@ -1026,6 +1042,26 @@ async function runStatusRefresh({ provider } = {}) {
   }
 }
 
+async function importWorkBuddy() {
+  if (app.busy) return;
+  setBusy(true, "正在读取 WorkBuddy Switch 账号库…");
+  try {
+    const data = await api("/api/workbuddy/import", { method: "POST" });
+    const result = data.result || {};
+    app.state = data.state;
+    await refreshData({ silent: true });
+    toast(
+      `WorkBuddy 导入：新增 ${result.imported || 0} 个，更新 ${result.updated || 0} 个`,
+      result.errors?.length ? "warn" : "ok",
+    );
+  } catch (error) {
+    toast(error.message, "bad");
+  } finally {
+    setBusy(false);
+    render();
+  }
+}
+
 async function runImport() {
   if (app.busy) return;
   setBusy(true, "正在读取本机客户端登录态…");
@@ -1034,8 +1070,12 @@ async function runImport() {
     const result = data.result || {};
     app.state = data.state;
     await refreshData({ silent: true });
-    const skipped = result.skipped?.length ? `，跳过 ${result.skipped.length} 个未登录客户端` : "";
-    toast(`导入完成：新增 ${result.imported || 0} 个，更新 ${result.updated || 0} 个${skipped}`, result.errors?.length ? "warn" : "ok");
+    const skippedDetail = result.skipped?.map((row) => `${row.provider}: ${row.reason}`).join("；") || "";
+    toast(
+      `导入完成：新增 ${result.imported || 0} 个，更新 ${result.updated || 0} 个`,
+      result.errors?.length || result.skipped?.length ? "warn" : "ok",
+      skippedDetail,
+    );
   } catch (error) {
     toast(error.message, "bad");
   } finally {
@@ -1255,6 +1295,7 @@ function bindEvents() {
     if (action === "refresh-status") return runStatusRefresh();
     if (action === "refresh-logs") return refreshData({ logs: true });
     if (action === "import") return runImport();
+    if (action === "import-workbuddy") return importWorkBuddy();
     if (action === "add-account") return openLoginChooser();
     if (action === "login") return startLogin(target.dataset.provider);
     if (action === "switch-account") return switchAccount(target.dataset.id);

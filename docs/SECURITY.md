@@ -35,6 +35,7 @@ AutoSwitch 原名 CreditPilot。首次运行 AutoSwitch 时，如果 `%LOCALAPPD
 - 外部请求只访问：
   - `https://openapi.qoder.sh`、`https://openapi.qoder.com.cn`、`https://qoder.com`、`https://qoder.cn`
   - `https://api.trae.cn`
+  - `https://www.codebuddy.cn` / `https://www.workbuddy.cn`（WorkBuddy 签到与额度）
   - `https://api.github.com/repos/sanzhixiaoxia/AutoSwitch/releases/latest`（仅在手动/启动后读取缓存时检查更新）
 - 没有遥测、广告、远程配置或第三方上传。
 
@@ -48,6 +49,15 @@ AutoSwitch 原名 CreditPilot。首次运行 AutoSwitch 时，如果 `%LOCALAPPD
 ## 检查更新
 
 「设置 → 关于与更新」会读取 GitHub Releases 的公开 API。请求由本机服务发出，不携带账号 token、cookie 或使用数据；结果缓存在数据目录的 `update.json` 中 6 小时，点击「检查更新」会强制刷新。更新检查只显示版本和下载链接，不会自动下载或执行安装包。Windows 上优先使用系统 `curl.exe`（系统证书/代理），失败时回退 Node `fetch`。
+
+## WorkBuddy 账号来源
+
+WorkBuddy 客户端自身把 accessToken 封装为 `$wbEncrypted`，本项目不提取其密钥。WorkBuddy 账号只在你点击「从 WorkBuddy Switch 导入」或运行 `autoswitch workbuddy-import` 时，读取 `%APPDATA%\WorkBuddy Switch\vault.json` 中由 WorkBuddy Switch 官方网页登录保存的会话，并使用 WorkBuddy Switch 的 Electron safeStorage 解密。
+
+- 只读导入，不修改 WorkBuddy Switch 的账号库或客户端登录。
+- 导入的 token 存入 AutoSwitch 自己的加密账号库，并随加密备份保存。
+- 不自动刷新 WorkBuddy token，避免轮换 refreshToken 导致 WorkBuddy Switch 会话失效；过期后重新导入。
+- 暂不支持在 AutoSwitch 中切换 WorkBuddy 客户端，也不访问成长中心扩展活动。
 
 ## 本地面板的边界
 
