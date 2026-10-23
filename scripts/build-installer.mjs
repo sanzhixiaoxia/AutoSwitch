@@ -11,15 +11,24 @@ const DIST = path.join(ROOT, "dist");
 const STAGE = path.join(DIST, "stage");
 const APP_STAGE = path.join(STAGE, "app");
 const SETUP = path.join(DIST, `AutoSwitch-Setup-${VERSION}.exe`);
-const PORTABLE_ROOT = path.join(DIST, "portable");
-const PORTABLE_DIR = path.join(PORTABLE_ROOT, "AutoSwitch");
 const PORTABLE_ZIP = path.join(DIST, `AutoSwitch-Portable-${VERSION}.zip`);
 const ICON_ICO = path.join(ROOT, "assets", "icon.ico");
 const ELECTRON_DIST = path.join(ROOT, "node_modules", "electron", "dist");
 const ELECTRON_ZIP = path.join(STAGE, "electron.zip");
-const ELECTRON_PAYLOAD = path.join(DIST, "electron-payload");
 
-const rm = (target) => fs.rmSync(target, { recursive: true, force: true });
+// 刚复制出来的 Electron 大文件常被实时扫描占用，删除会 EPERM/EBUSY，重试即可。
+function rm(target) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      if (!fs.existsSync(target)) return;
+    } catch (error) {
+      if (!["EPERM", "EBUSY", "EACCES"].includes(error.code)) throw error;
+    }
+    spawnSync("ping", ["-n", "3", "127.0.0.1"], { stdio: "ignore", windowsHide: true });
+  }
+  throw new Error(`无法删除旧构建产物：${target}`);
+}
 const mkdir = (target) => fs.mkdirSync(target, { recursive: true });
 const copy = (source, destination) => {
   if (!fs.existsSync(source)) return false;
@@ -42,22 +51,53 @@ function runPowerShell(script, label) {
   return String(result.stdout || "").trim();
 }
 
-function zipDirectoryContents(sourceDir, destinationZip) {
-  rm(destinationZip);
-  const ps =
-    `Compress-Archive -Path '${sourceDir.replace(/'/g, "''")}\\*' ` +
-    `-DestinationPath '${destinationZip.replace(/'/g, "''")}' -Force`;
-  runPowerShell(ps, "创建 ZIP");
-  if (!fs.existsSync(destinationZip)) throw new Error("ZIP 未生成");
+function walkFiles(root, { prefix = "", rename = {} } = {}) {
+  const base = path.resolve(root);
+  const entries = [];
+  const stack = [base];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        stack.push(abs);
+        continue;
+      }
+      let rel = path.relative(base, abs).split(path.sep).join("/");
+      rel = rename[rel] ?? rel;
+      entries.push({ abs, name: prefix ? `${prefix}/${rel}` : rel });
+    }
+  }
+  return entries;
 }
 
-function zipFolder(sourceDir, destinationZip) {
-  rm(destinationZip);
-  const ps =
-    `Compress-Archive -LiteralPath '${sourceDir.replace(/'/g, "''")}' ` +
-    `-DestinationPath '${destinationZip.replace(/'/g, "''")}' -Force`;
-  runPowerShell(ps, "创建便携版 ZIP");
-  if (!fs.existsSync(destinationZip)) throw new Error("便携版 ZIP 未生成");
+// 按清单逐项写入 ZIP：不需要先把 350MB 运行时复制到中转目录，
+// 也避开 Compress-Archive 在大目录上「退出 0 却不产出 zip」的坑。
+function buildZip(destinationZip, entries, label = "创建 ZIP") {
+  if (fs.existsSync(destinationZip)) rm(destinationZip);
+  const manifest = path.join(DIST, `zip-manifest-${path.basename(destinationZip)}.json`);
+  fs.writeFileSync(manifest, JSON.stringify(entries.map((entry) => [entry.abs, entry.name])), "utf8");
+  const quote = (value) => value.replace(/'/g, "''");
+  const script =
+    "$ErrorActionPreference='Stop';" +
+    "Add-Type -AssemblyName System.IO.Compression;" +
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem;" +
+    `$items = Get-Content -Raw -LiteralPath '${quote(manifest)}' | ConvertFrom-Json;` +
+    `$zip = [System.IO.Compression.ZipFile]::Open('${quote(destinationZip)}', [System.IO.Compression.ZipArchiveMode]::Create);` +
+    "try { foreach ($item in $items) {" +
+    "[System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $item[0], $item[1], " +
+    "[System.IO.Compression.CompressionLevel]::Optimal) | Out-Null } } finally { $zip.Dispose() };" +
+    "Write-Output 'ok'";
+  try {
+    runPowerShell(script, label);
+  } finally {
+    fs.rmSync(manifest, { force: true });
+  }
+  if (!fs.existsSync(destinationZip)) throw new Error(`${label}：没有产出 ${path.basename(destinationZip)}`);
+}
+
+function zipDirectoryContents(sourceDir, destinationZip) {
+  buildZip(destinationZip, walkFiles(sourceDir));
 }
 
 function sha256(file) {
@@ -105,26 +145,31 @@ function buildStage() {
   return STAGE;
 }
 
-function buildElectronZip(stage) {
-  const electronExe = path.join(ELECTRON_DIST, "electron.exe");
-  if (!fs.existsSync(electronExe)) {
+function ensureElectronRuntime() {
+  const exe = path.join(ELECTRON_DIST, "electron.exe");
+  if (fs.existsSync(exe)) return;
+  // electron@45 没有 postinstall：二进制由 require('electron') 懒下载，构建时自己补齐。
+  const installer = path.join(ROOT, "node_modules", "electron", "install.js");
+  if (!fs.existsSync(installer)) {
+    throw new Error(`缺少 Electron 运行时与安装脚本：${exe}\n请先 npm install。`);
+  }
+  console.log("  Electron 运行时未下载，执行 node_modules/electron/install.js ...");
+  const result = spawnSync(process.execPath, [installer], { cwd: ROOT, stdio: "inherit", windowsHide: true, timeout: 1_800_000 });
+  if (result.status !== 0 || !fs.existsSync(exe)) {
     throw new Error(
-      `缺少 Electron 运行时：${electronExe}\n` +
-        "先 npm install；若本机代理导致下载失败，用 curl 取官方 zip、按 node_modules/electron/checksums.json 校验后解压到该目录。",
+      `Electron 运行时下载失败：${exe}\n` +
+        "代理环境下可用 curl 取官方 zip、按 node_modules/electron/checksums.json 校验后解压到 node_modules/electron/dist。",
     );
   }
-  rm(ELECTRON_PAYLOAD);
-  mkdir(ELECTRON_PAYLOAD);
-  for (const entry of fs.readdirSync(ELECTRON_DIST, { withFileTypes: true })) {
-    if (entry.name === "electron.exe") continue;
-    copy(path.join(ELECTRON_DIST, entry.name), path.join(ELECTRON_PAYLOAD, entry.name));
-  }
-  fs.copyFileSync(electronExe, path.join(ELECTRON_PAYLOAD, "AutoSwitch.exe"));
-  const appDir = path.join(ELECTRON_PAYLOAD, "resources", "app");
-  mkdir(appDir);
-  copy(path.join(stage, "app"), appDir);
-  zipDirectoryContents(ELECTRON_PAYLOAD, ELECTRON_ZIP);
-  if (!fs.existsSync(ELECTRON_ZIP)) throw new Error("Electron 运行时包未生成");
+}
+
+function buildElectronZip(stage) {
+  ensureElectronRuntime();
+  const entries = [
+    ...walkFiles(ELECTRON_DIST, { rename: { "electron.exe": "AutoSwitch.exe" } }),
+    ...walkFiles(path.join(stage, "app"), { prefix: "resources/app" }),
+  ];
+  buildZip(ELECTRON_ZIP, entries, "打包 Electron 运行时");
   return ELECTRON_ZIP;
 }
 
@@ -194,19 +239,22 @@ function buildSetup(stage) {
 }
 
 function buildPortable(stage) {
-  rm(PORTABLE_ROOT);
-  mkdir(PORTABLE_DIR);
-  copy(ELECTRON_PAYLOAD, PORTABLE_DIR);
-  mkdir(path.join(PORTABLE_DIR, "app"));
-  fs.copyFileSync(path.join(stage, "node.exe"), path.join(PORTABLE_DIR, "node.exe"));
-  fs.copyFileSync(path.join(stage, "node-LICENSE.txt"), path.join(PORTABLE_DIR, "node-LICENSE.txt"));
-  if (fs.existsSync(ICON_ICO)) fs.copyFileSync(ICON_ICO, path.join(PORTABLE_DIR, "AutoSwitch.ico"));
-  copy(path.join(stage, "app"), path.join(PORTABLE_DIR, "app"));
-  fs.copyFileSync(path.join(ROOT, "installer", "portable-start.vbs"), path.join(PORTABLE_DIR, "Start AutoSwitch.vbs"));
-  fs.copyFileSync(path.join(ROOT, "installer", "portable-start.cmd"), path.join(PORTABLE_DIR, "Start AutoSwitch.cmd"));
-  fs.copyFileSync(path.join(ROOT, "installer", "portable-stop.cmd"), path.join(PORTABLE_DIR, "Stop AutoSwitch.cmd"));
-  fs.copyFileSync(path.join(ROOT, "installer", "portable-README.txt"), path.join(PORTABLE_DIR, "README.txt"));
-  zipFolder(PORTABLE_DIR, PORTABLE_ZIP);
+  ensureElectronRuntime();
+  const single = (abs, name) => ({ abs, name });
+  const appEntries = walkFiles(path.join(stage, "app"));
+  const entries = [
+    ...walkFiles(ELECTRON_DIST, { prefix: "AutoSwitch", rename: { "electron.exe": "AutoSwitch.exe" } }),
+    ...appEntries.map((entry) => single(entry.abs, `AutoSwitch/resources/app/${entry.name}`)),
+    ...appEntries.map((entry) => single(entry.abs, `AutoSwitch/app/${entry.name}`)),
+    single(path.join(stage, "node.exe"), "AutoSwitch/node.exe"),
+    single(path.join(stage, "node-LICENSE.txt"), "AutoSwitch/node-LICENSE.txt"),
+    single(path.join(ROOT, "installer", "portable-start.vbs"), "AutoSwitch/Start AutoSwitch.vbs"),
+    single(path.join(ROOT, "installer", "portable-start.cmd"), "AutoSwitch/Start AutoSwitch.cmd"),
+    single(path.join(ROOT, "installer", "portable-stop.cmd"), "AutoSwitch/Stop AutoSwitch.cmd"),
+    single(path.join(ROOT, "installer", "portable-README.txt"), "AutoSwitch/README.txt"),
+  ];
+  if (fs.existsSync(ICON_ICO)) entries.push(single(ICON_ICO, "AutoSwitch/AutoSwitch.ico"));
+  buildZip(PORTABLE_ZIP, entries, "打包便携版");
   return PORTABLE_ZIP;
 }
 
