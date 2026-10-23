@@ -60,13 +60,16 @@ export class LogStore {
 
   latestClaim(accountId, provider, now = Date.now()) {
     const currentRound = roundKey(provider, now);
+    let failure = null;
     for (const entry of this.read(MAX_READ)) {
       if (entry.type !== "claim") continue;
       if (entry.accountId !== accountId) continue;
       if (entry.roundKey !== currentRound) continue;
       if (["claimed", "already"].includes(entry.status)) return entry;
+      failure ??= entry;
     }
-    return null;
+    // 本轮没有成功记录时，用最近一次失败/过期说明状态，别让界面显示成「待检查」。
+    return failure;
   }
 
   lastRun() {

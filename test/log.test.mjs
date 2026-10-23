@@ -34,6 +34,30 @@ test("领取记录按轮次汇总，失败不覆盖成功", () => {
   }
 });
 
+test("本轮只有失败/过期记录时，汇总回落到最近一次失败", () => {
+  const home = tempHome();
+  try {
+    const log = new LogStore(home);
+    const now = Date.now();
+    const round = traeRoundKey(now);
+    log.append({ type: "claim", at: new Date(now - 2000).toISOString(), provider: "trae", accountId: "trae:c", accountName: "C", status: "failed", message: "第一次失败", roundKey: round });
+    log.append({ type: "claim", at: new Date(now).toISOString(), provider: "trae", accountId: "trae:c", accountName: "C", status: "failed", amount: null, message: "当前参与用户太多（code 9074）", roundKey: round });
+    log.append({ type: "claim", at: new Date(now).toISOString(), provider: "trae", accountId: "trae:d", accountName: "D", status: "expired", message: "登录凭据已失效", roundKey: round });
+    log.append({ type: "claim", at: new Date(now).toISOString(), provider: "trae", accountId: "trae:e", accountName: "E", status: "pending", message: "", roundKey: round });
+
+    const summary = log.summary([{ id: "trae:c", provider: "trae" }, { id: "trae:d", provider: "trae" }, { id: "trae:e", provider: "trae" }], now);
+    const rowC = summary.accounts.find((row) => row.accountId === "trae:c");
+    assert.equal(rowC.status, "failed");
+    assert.match(rowC.message, /9074/);
+    assert.equal(summary.accounts.find((row) => row.accountId === "trae:d").status, "expired");
+    assert.equal(summary.accounts.find((row) => row.accountId === "trae:e").status, "pending");
+    assert.equal(summary.done, 0);
+    assert.equal(summary.pending, 3);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("Trae 自然日轮次与 Qoder 轮次相互独立", () => {
   const now = Date.UTC(2026, 9, 22, 1, 0, 0); // 北京时间 09:00
   assert.equal(qoderRoundKey(now), "2026-10-21");

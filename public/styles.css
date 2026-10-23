@@ -962,7 +962,7 @@ body {
 /* ── Overview lower grid ── */
 .lower-grid {
   display: grid;
-  grid-template-columns: 1.45fr 0.55fr;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.55fr);
   gap: 16px;
 }
 
