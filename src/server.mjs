@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { PROVIDERS, providerMeta, detectClients, importAll, adapterFor, syncAll } from "./providers/index.mjs";
 import { startDeviceLogin, pollDeviceLogin } from "./providers/qoder.mjs";
 import { importFromSwitch as importWorkBuddyFromSwitch } from "./providers/workbuddy.mjs";
+import { hasSlot as traeHasSlot } from "./providers/trae.mjs";
 import { taskStatus, installTask, uninstallTask } from "./task.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { PROJECT_URL, checkForUpdate, readCachedUpdate } from "./update.mjs";
@@ -101,15 +102,20 @@ function buildState(store, log, scheduler, port, task) {
     const pub = store.publicAccount(internal);
     const meta = providerMeta(internal.provider);
     const today = summaryById.get(internal.id) || { status: "pending" };
+    // Trae 的快照是整份客户端登录目录，能不能切要看磁盘上那份在不在，
+    // 不能只看导入时写下的 meta.slot 标记（恢复备份、跨版本都会让它缺失）。
+    const snapshotReady =
+      internal.provider === "trae"
+        ? traeHasSlot(store.home, internal.uid) || Boolean(internal.meta?.slot)
+        : Boolean(internal.snapshot);
     return {
       ...pub,
       providerLabel: meta?.label || internal.provider,
       providerShort: meta?.short || internal.provider,
       color: meta?.color || "#888",
       quota: internal.meta?.quota || null,
-      hasSlot: Boolean(internal.meta?.slot || internal.snapshot),
-      hasSnapshot:
-        internal.provider === "trae" ? Boolean(internal.meta?.slot) : Boolean(internal.snapshot),
+      hasSlot: snapshotReady,
+      hasSnapshot: snapshotReady,
       today: {
         status: today.status,
         amount: today.amount ?? null,

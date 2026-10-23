@@ -171,3 +171,44 @@ test("本地 API：防 DNS 重绑定、CSRF 校验、状态不含 token", async 
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("Trae 可切换性以磁盘快照为准，不依赖 meta.slot 标记", async () => {
+  const home = tempHome();
+  const store = new Store({ home }).init();
+  store.upsertAccount({
+    provider: "trae",
+    uid: "9000000000000001",
+    name: "Trae 快照账号",
+    token: "Cloud-IDE-JWT abc",
+    meta: {},
+  });
+  const scheduler = {
+    state: () => ({ autoClaim: false, intervalMinutes: 120, running: false, autoRunning: false, busy: false, lastRun: null, nextRunAt: null, nextRunAtLocal: null, lastError: null }),
+    defer() {},
+    applyConfig() {},
+  };
+  const engine = { busy: false, async claimAll() { return { ok: true, summary: {}, results: [] }; }, async refreshStatuses() { return { ok: true, results: [] }; } };
+  const app = createServer({
+    store,
+    log: new LogStore(home),
+    engine,
+    scheduler,
+    port: 0,
+    taskStatusFn: () => ({ supported: true, installed: false }),
+    syncAllFn: () => {},
+  });
+  try {
+    const { port } = await app.start();
+    const state = async () => (await (await fetch(`http://127.0.0.1:${port}/api/state`)).json()).accounts[0];
+    assert.equal((await state()).hasSnapshot, false, "没有快照时不该可切换");
+    const slot = path.join(home, "trae-slots", "9000000000000001", "User", "globalStorage");
+    fs.mkdirSync(slot, { recursive: true });
+    fs.writeFileSync(path.join(slot, "storage.json"), "{}");
+    const after = await state();
+    assert.equal(after.hasSnapshot, true, "磁盘已有快照就该可切换，哪怕 meta.slot 缺失");
+    assert.equal(after.hasSlot, true);
+  } finally {
+    await app.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
