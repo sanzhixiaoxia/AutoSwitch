@@ -15,6 +15,9 @@ const PORTABLE_ROOT = path.join(DIST, "portable");
 const PORTABLE_DIR = path.join(PORTABLE_ROOT, "AutoSwitch");
 const PORTABLE_ZIP = path.join(DIST, `AutoSwitch-Portable-${VERSION}.zip`);
 const ICON_ICO = path.join(ROOT, "assets", "icon.ico");
+const ELECTRON_DIST = path.join(ROOT, "node_modules", "electron", "dist");
+const ELECTRON_ZIP = path.join(STAGE, "electron.zip");
+const ELECTRON_PAYLOAD = path.join(DIST, "electron-payload");
 
 const rm = (target) => fs.rmSync(target, { recursive: true, force: true });
 const mkdir = (target) => fs.mkdirSync(target, { recursive: true });
@@ -65,7 +68,7 @@ function buildStage() {
   rm(STAGE);
   mkdir(APP_STAGE);
 
-  for (const directory of ["bin", "src", "public", "docs"]) {
+  for (const directory of ["bin", "src", "public", "docs", "electron", "assets"]) {
     const source = path.join(ROOT, directory);
     if (!copy(source, path.join(APP_STAGE, directory))) throw new Error(`缺少目录：${directory}`);
   }
@@ -102,12 +105,36 @@ function buildStage() {
   return STAGE;
 }
 
+function buildElectronZip(stage) {
+  const electronExe = path.join(ELECTRON_DIST, "electron.exe");
+  if (!fs.existsSync(electronExe)) {
+    throw new Error(
+      `缺少 Electron 运行时：${electronExe}\n` +
+        "先 npm install；若本机代理导致下载失败，用 curl 取官方 zip、按 node_modules/electron/checksums.json 校验后解压到该目录。",
+    );
+  }
+  rm(ELECTRON_PAYLOAD);
+  mkdir(ELECTRON_PAYLOAD);
+  for (const entry of fs.readdirSync(ELECTRON_DIST, { withFileTypes: true })) {
+    if (entry.name === "electron.exe") continue;
+    copy(path.join(ELECTRON_DIST, entry.name), path.join(ELECTRON_PAYLOAD, entry.name));
+  }
+  fs.copyFileSync(electronExe, path.join(ELECTRON_PAYLOAD, "AutoSwitch.exe"));
+  const appDir = path.join(ELECTRON_PAYLOAD, "resources", "app");
+  mkdir(appDir);
+  copy(path.join(stage, "app"), appDir);
+  zipDirectoryContents(ELECTRON_PAYLOAD, ELECTRON_ZIP);
+  if (!fs.existsSync(ELECTRON_ZIP)) throw new Error("Electron 运行时包未生成");
+  return ELECTRON_ZIP;
+}
+
 function buildSetup(stage) {
   rm(SETUP);
   const files = [
     "node.exe",
     "node-LICENSE.txt",
     "app.zip",
+    "electron.zip",
     "install.cmd",
     "install.ps1",
     "uninstall.ps1",
@@ -168,6 +195,8 @@ function buildSetup(stage) {
 
 function buildPortable(stage) {
   rm(PORTABLE_ROOT);
+  mkdir(PORTABLE_DIR);
+  copy(ELECTRON_PAYLOAD, PORTABLE_DIR);
   mkdir(path.join(PORTABLE_DIR, "app"));
   fs.copyFileSync(path.join(stage, "node.exe"), path.join(PORTABLE_DIR, "node.exe"));
   fs.copyFileSync(path.join(stage, "node-LICENSE.txt"), path.join(PORTABLE_DIR, "node-LICENSE.txt"));
@@ -183,14 +212,17 @@ function buildPortable(stage) {
 
 function main() {
   if (process.platform !== "win32") throw new Error("安装包只能在 Windows 上构建");
+  const mb = (file) => (fs.statSync(file).size / 1048576).toFixed(1);
   mkdir(DIST);
   console.log(`构建 AutoSwitch ${VERSION} ...`);
   const stage = buildStage();
-  console.log("1/3 应用文件与 Node 运行时已准备");
+  console.log("1/4 应用文件与 Node 运行时已准备");
+  buildElectronZip(stage);
+  console.log(`2/4 Electron 窗口运行时：electron.zip ${mb(ELECTRON_ZIP)} MB`);
   const setup = buildSetup(stage);
-  console.log(`2/3 安装包：${setup}`);
+  console.log(`3/4 安装包：${setup} ${mb(SETUP)} MB`);
   const portable = buildPortable(stage);
-  console.log(`3/3 便携版：${portable}`);
+  console.log(`4/4 便携版：${portable} ${mb(PORTABLE_ZIP)} MB`);
 
   const artifacts = [setup, portable].map((file) => {
     const hash = sha256(file);

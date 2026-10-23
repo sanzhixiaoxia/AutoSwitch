@@ -3,17 +3,17 @@
 ## 总览
 
 ```text
-Trae 客户端 ─┐                       ┌─ 本机网页面板 (public/)
-WorkBuddy Switch 账号库 ─┤
-Qoder 客户端 ─┼─ 读取/解密登录态 ──▶  │       │ fetch JSON
-Qoder CN ────┘       │               │       ▼
-                     ▼               │  HTTP API (src/server.mjs, 127.0.0.1)
-              accounts.enc           │       │
-            (DPAPI + AES-GCM)        │       ▼
-                     │               │  ClaimEngine (src/claim.mjs)
-                     └──────────────▶│   ├─ Qoder adapter
-                                      │   ├─ Trae adapter
-Scheduler (每 N 分钟) ───────────────▶│   └─ Store / LogStore
+Trae 客户端 ─┐                       ┌─ 本机面板 (public/) ◀── Electron 窗口壳 (electron/main.mjs)
+WorkBuddy Switch 账号库 ─┤                │       │ fetch JSON
+Qoder 客户端 ─┼─ 读取/解密登录态 ──▶  │       ▼
+Qoder CN ────┘       │               │  HTTP API (src/server.mjs, 127.0.0.1)
+                     ▼               │       │
+              accounts.enc           │       ▼
+            (DPAPI + AES-GCM)        │  ClaimEngine (src/claim.mjs)
+                     │               │   ├─ Qoder adapter
+                     └──────────────▶│   ├─ Trae adapter
+                                      │   └─ Store / LogStore
+Scheduler (每 N 分钟) ───────────────▶│
                                       │
                      ┌────────────────┘
                      ▼
@@ -21,7 +21,7 @@ Scheduler (每 N 分钟) ───────────────▶│   �
           api.trae.cn
 ```
 
-没有运行时 npm 依赖；前端是原生 HTML/CSS/JS，由同一个 Node 进程静态托管。
+领取服务没有运行时 npm 依赖；前端是原生 HTML/CSS/JS，由同一个 Node 进程静态托管。`AutoSwitch.exe` 只是这套界面的窗口壳：启动时先探测 `127.0.0.1:<port>/api/health`，已经在跑就直接 attach，没跑就用内置 `node.exe` 拉起 `autoswitch start --no-open` 再加载页面；关窗收进托盘，后台服务不受影响。
 
 ## 目录
 
@@ -45,6 +45,7 @@ src/providers/trae.mjs     Trae CN 适配器
 src/providers/workbuddy.mjs WorkBuddy 适配器（从 WorkBuddy Switch 导入）
 src/providers/index.mjs    适配器注册与汇总
 public/                    本地单页面板
+electron/main.mjs          Electron 窗口壳（单实例、托盘、attach/拉起后台服务）
 test/                      node:test 单元测试
 ```
 

@@ -3,24 +3,34 @@
 
 安装位置：
   %LOCALAPPDATA%\Programs\AutoSwitch
+    AutoSwitch.exe            窗口壳（Electron）
+    resources\app\            窗口壳加载的应用副本
+    node.exe + app\           后台服务与命令行（autoswitch CLI）
+    AutoSwitch.vbs            隐藏窗口启动后台服务
+  数据目录：%LOCALAPPDATA%\AutoSwitch（账号库、领取记录、Electron 缓存）
 
 安装器默认完成的事：
-  1. 桌面与开始菜单快捷方式
-  2. 开机自启：当前用户登录时静默启动的计划任务 AutoSwitch（不弹浏览器）
-  3. 安装结束立即启动 AutoSwitch，并打开面板 http://127.0.0.1:47871
+  1. 桌面与开始菜单快捷方式（指向 AutoSwitch.exe 窗口）
+  2. 开机自启：当前用户登录时静默启动后台服务的计划任务 AutoSwitch（不弹窗）
+  3. 安装结束立即打开 AutoSwitch 窗口
 
 脚本化安装可以关掉上述任一项：
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1 -NoLaunch -NoAutoStart -NoDesktopShortcut
 
 启动：
-  桌面 / 开始菜单 → AutoSwitch
-  或运行安装目录下的 AutoSwitch.vbs（隐藏窗口，自动打开浏览器）
-  控制台模式：Start AutoSwitch.cmd
+  桌面 / 开始菜单 → AutoSwitch（打开应用窗口）
+  Start AutoSwitch.cmd 等同双击桌面图标
+  只要后台服务没在跑，窗口会自动把它拉起来
 
-网页面板：
+窗口与后台服务：
+  AutoSwitch.exe 是窗口壳，后台领取由 node.exe 跑的本地服务承担。
+  关闭窗口只是收进系统托盘，领取任务继续；要彻底停服务用下面的停止方式。
+  托盘右键：打开 AutoSwitch / 用浏览器打开面板 / 退出 AutoSwitch。
+
+网页面板（同一个界面，也可以用浏览器打开）：
   http://127.0.0.1:47871
 
-停止：
+停止后台服务：
   Stop AutoSwitch.cmd
   或运行安装目录下的 node.exe app\bin\autoswitch.mjs stop
 

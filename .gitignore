@@ -8,3 +8,5 @@ dist/
 shot-*.png
 
 vibe_images/
+
+.electron-cache/

@@ -1,13 +1,13 @@
 # AutoSwitch
 
-**Trae CN / WorkBuddy / Qoder / Qoder CN 每日积分自动领取。** 本机 Node 守护进程 + 本地网页，多账号、加密存储、可切换客户端登录。
+**Trae CN / WorkBuddy / Qoder / Qoder CN 每日积分自动领取。** 本机 Node 守护进程 + Electron 桌面窗口，多账号、加密存储、可切换客户端登录。
 
 > 仓库：<https://github.com/sanzhixiaoxia/AutoSwitch> · 原名 CreditPilot
 
 [![Windows Build](https://github.com/sanzhixiaoxia/AutoSwitch/actions/workflows/windows-build.yml/badge.svg)](https://github.com/sanzhixiaoxia/AutoSwitch/actions/workflows/windows-build.yml)
 [![GitHub release](https://img.shields.io/github/v/release/sanzhixiaoxia/AutoSwitch?label=release)](https://github.com/sanzhixiaoxia/AutoSwitch/releases/latest)
 
-> 不依赖 Electron、不需要安装任何 npm 运行时依赖，只用 Node 内置模块。所有账号凭据留在本机，不上传。
+> 领取服务只用 Node 内置模块，运行时零 npm 依赖；界面壳是 Electron，只在构建时作为 devDependency 出现。装完就是一个 `AutoSwitch.exe` 窗口 + 一个后台服务，同一套界面也可以用浏览器打开。所有账号凭据留在本机，不上传。
 
 ---
 
@@ -20,8 +20,9 @@
 | **自动任务** | 默认开启，每 120 分钟检查一次；先查官方状态，只领没领的，幂等安全 |
 | **客户端切换** | 可选把 Trae / Qoder 客户端登录切到任意已保存账号，切前自动保存当前登录 |
 | **浏览器登录** | Qoder / Qoder CN 支持设备码登录，生成独立账号，不改变客户端当前登录 |
+| **桌面窗口** | Electron 窗口 + 系统托盘，关窗只是收进后台、领取继续；同一界面也能用浏览器打开 |
 | **本地面板** | 总览、账号、记录、设置；总览按平台一行一个，列出今日进度、剩余额度、最近领取与状态；浅色/深色 |
-| **开机自启** | 安装版默认注册 Windows 登录时计划任务，静默后台运行；也可一条命令安装/移除 |
+| **开机自启** | 安装版默认注册 Windows 登录时计划任务，静默启动后台服务；也可一条命令安装/移除 |
 | **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
 | **项目与更新** | 界面内置 GitHub 项目入口；从 GitHub Releases 检查更新，显示新版本与安装包下载 |
 | **备份与导出** | 密码加密的账号/设置备份与恢复；导出账号清单 JSON、领取记录 CSV（不含 token） |
@@ -109,6 +110,7 @@ autoswitch task uninstall
 ## 打包与安装（Windows）
 
 ```bash
+npm install    # 拉取构建期依赖 Electron（会下载 Electron 运行时）
 npm run dist
 ```
 
@@ -116,11 +118,11 @@ npm run dist
 
 | 文件 | 说明 |
 | --- | --- |
-| `AutoSwitch-Setup-<version>.exe` | 安装版，内置 Node.js 运行时，按当前用户安装到 `%LOCALAPPDATA%\Programs\AutoSwitch`，不需要管理员权限 |
-| `AutoSwitch-Portable-<version>.zip` | 便携版，解压后双击 `Start AutoSwitch.vbs`，数据目录与安装版共用 |
+| `AutoSwitch-Setup-<version>.exe` | 安装版，内置 Node.js 与 Electron 运行时（体积因此从 ~27MB 涨到 ~200MB），按当前用户安装到 `%LOCALAPPDATA%\Programs\AutoSwitch`，不需要管理员权限 |
+| `AutoSwitch-Portable-<version>.zip` | 便携版，解压后双击 `AutoSwitch.exe`（后台服务没跑时窗口会自动拉起），数据目录与安装版共用 |
 | `*.sha256` | 对应产物的 SHA-256 |
 
-安装版默认三件事：创建**桌面**和开始菜单快捷方式、注册当前用户登录时静默启动的**开机自启计划任务**、安装结束**立即启动** AutoSwitch 并打开面板。安装过程会停止正在运行的旧版/开发版 AutoSwitch，账号库和领取记录保留在 `%LOCALAPPDATA%\AutoSwitch`。卸载默认保留数据，但会移除计划任务和桌面/开始菜单/启动文件夹快捷方式；只有输入 `YES` 才会删除账号与记录。
+安装版默认三件事：创建**桌面**和开始菜单快捷方式（指向 `AutoSwitch.exe`）、注册当前用户登录时静默启动后台服务的**开机自启计划任务**、安装结束**立即打开窗口**。安装过程会停止正在运行的旧版/开发版 AutoSwitch，账号库和领取记录保留在 `%LOCALAPPDATA%\AutoSwitch`。卸载默认保留数据，但会移除计划任务和桌面/开始菜单/启动文件夹快捷方式；只有输入 `YES` 才会删除账号与记录。
 
 不想接受默认行为时，用脚本方式安装并带上开关：
 

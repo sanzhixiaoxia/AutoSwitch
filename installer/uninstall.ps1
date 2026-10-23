@@ -13,6 +13,9 @@ try {
   $processes = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'autoswitch\.mjs' }
   foreach ($process in $processes) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }
 } catch {}
+try {
+  Get-Process -Name 'AutoSwitch' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$InstallDir*" } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+} catch {}
 try { Unregister-ScheduledTask -TaskName 'AutoSwitch' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
 Remove-Item (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\AutoSwitch') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue

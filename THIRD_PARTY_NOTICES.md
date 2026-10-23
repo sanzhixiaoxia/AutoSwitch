@@ -1,6 +1,12 @@
 # Third-Party Notices
 
-AutoSwitch has no npm runtime dependencies. Its implementation and protocol knowledge draw on the following MIT-licensed community projects. Their copyright notices are reproduced below. No source files were copied verbatim except protocol constants and request-header/format details required for interoperability.
+The credit-claiming service has no npm runtime dependencies. The desktop window is an Electron shell: Electron is a build-time dev dependency only, and its runtime is bundled into the installer. Implementation and protocol knowledge draw on the following MIT-licensed community projects. Their copyright notices are reproduced below. No source files were copied verbatim except protocol constants and request-header/format details required for interoperability.
+
+## Electron (bundled desktop shell)
+
+- Project: https://github.com/electron/electron
+- Copyright (c) OpenJS contributors and Electron contributors. MIT license.
+- The installer and portable ZIP bundle the official prebuilt Electron runtime for Windows x64. The runtime is fetched from GitHub Releases and verified against `node_modules/electron/checksums.json` (SHA-256) before packaging. Electron embeds Chromium and V8, each under their own licenses; see `LICENSES.chromium.html` inside the installed program directory for the full text.
 
 ## Node.js (bundled runtime)
 

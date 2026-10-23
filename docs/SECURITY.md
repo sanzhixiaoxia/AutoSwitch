@@ -70,6 +70,18 @@ WorkBuddy 客户端自身把 accessToken 封装为 `$wbEncrypted`，本项目不
 
 如需更强隔离，可以自行在前面加一层带认证的反向代理，但本项目不会在服务端实现多用户权限。
 
+## 桌面窗口（Electron）
+
+`AutoSwitch.exe` 只是本机面板的壳，不新增任何能力：
+
+- `nodeIntegration` 关闭、`contextIsolation` 开启、`sandbox` 开启，页面拿不到 Node 能力，也没有 preload 桥。
+- 窗口只允许导航到 `127.0.0.1:<port>`；其它 `http/https` 一律交给系统浏览器（`setWindowOpenHandler` + `will-navigate`），窗口内不加载任何远程内容。
+- 不默认开启远程调试端口，`--remote-debugging-port` 只在开发时手动加。
+- Electron 自身的缓存写到 `%LOCALAPPDATA%\AutoSwitch\electron`，不在 Roaming 另建目录。
+- `--no-proxy-server` 只作用于本进程的网络栈，用于避免回环请求被系统代理劫持，不修改机器的代理设置。
+- 关闭窗口只是收进托盘，后台服务继续跑；上面「本地面板的边界」里的风险面同样适用于窗口形态。
+- 打包用的 Electron 运行时按官方 `node_modules/electron/checksums.json` 校验 SHA-256 后入库；安装包没有代码签名，首次运行会有 SmartScreen 提示。
+
 ## 切换客户端登录的风险
 
 - 切换会**关闭并重新启动** Trae / Qoder 客户端；未保存的编辑内容可能丢失，网页端会二次确认。

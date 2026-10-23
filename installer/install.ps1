@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $Source = Split-Path -Parent $MyInvocation.MyCommand.Path
 $NodeSource = Join-Path $Source 'node.exe'
 $AppZip = Join-Path $Source 'app.zip'
+$ElectronZip = Join-Path $Source 'electron.zip'
 $IconSource = Join-Path $Source 'AutoSwitch.ico'
 $UninstallSource = Join-Path $Source 'uninstall.ps1'
 $ReadmeSource = Join-Path $Source 'README.txt'
@@ -16,16 +17,21 @@ $LicenseSource = Join-Path $Source 'node-LICENSE.txt'
 
 if (-not (Test-Path $NodeSource)) { throw '安装包缺少 node.exe' }
 if (-not (Test-Path $AppZip)) { throw '安装包缺少 app.zip' }
+if (-not (Test-Path $ElectronZip)) { throw '安装包缺少 electron.zip' }
 
 Write-Host "正在安装 AutoSwitch 到 $InstallDir ..."
 
-# 安装前停止旧版/开发版实例，释放 node.exe 与 app 目录。
+# 安装前停止旧版/开发版实例，释放 node.exe、AutoSwitch.exe 与 app 目录。
 try {
   $processes = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'autoswitch\.mjs|creditpilot\.mjs' }
   foreach ($process in $processes) {
     try { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
   }
+  Get-Process -Name 'AutoSwitch' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$InstallDir*" } | ForEach-Object {
+    try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
+  }
   if ($processes) { Start-Sleep -Milliseconds 800 }
+  Start-Sleep -Milliseconds 400
 } catch {}
 
 # 兼容从 CreditPilot 改名前的安装：移除旧开始菜单和旧计划任务，避免两个版本同时启动。
@@ -56,6 +62,25 @@ if (Test-Path $AppDir) {
 }
 Move-Item -LiteralPath $AppNew -Destination $AppDir -Force
 
+# Electron 窗口运行时（AutoSwitch.exe + dll + resources\app）。先清掉旧的 resources\app，避免残留上一版文件。
+$ElectronApp = Join-Path $InstallDir 'resources\app'
+if (Test-Path $ElectronApp) {
+  for ($i = 0; $i -lt 10; $i++) {
+    try { Remove-Item -Recurse -Force $ElectronApp; break } catch { if ($i -eq 9) { throw }; Start-Sleep -Milliseconds 300 }
+  }
+}
+for ($i = 0; $i -lt 10; $i++) {
+  try {
+    Expand-Archive -LiteralPath $ElectronZip -DestinationPath $InstallDir -Force
+    break
+  } catch {
+    if ($i -eq 9) { throw }
+    Start-Sleep -Milliseconds 300
+  }
+}
+$ExePath = Join-Path $InstallDir 'AutoSwitch.exe'
+if (-not (Test-Path $ExePath)) { throw 'Electron 主程序未解压出来：AutoSwitch.exe' }
+
 Copy-Item -LiteralPath $UninstallSource -Destination (Join-Path $InstallDir 'uninstall.ps1') -Force
 if (Test-Path $ReadmeSource) { Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $InstallDir 'README.txt') -Force }
 if (Test-Path $LicenseSource) { Copy-Item -LiteralPath $LicenseSource -Destination (Join-Path $InstallDir 'node-LICENSE.txt') -Force }
@@ -71,7 +96,7 @@ $encoding = New-Object System.Text.UnicodeEncoding($false, $true)
 [System.IO.File]::WriteAllText($vbsPath, $vbs, $encoding)
 
 $cmdPath = Join-Path $InstallDir 'Start AutoSwitch.cmd'
-$cmdText = "@echo off`r`n`"%~dp0node.exe`" `"%~dp0app\bin\autoswitch.mjs`" start`r`n"
+$cmdText = "@echo off`r`nstart `"AutoSwitch`" `"%~dp0AutoSwitch.exe`"`r`n"
 [System.IO.File]::WriteAllText($cmdPath, $cmdText, [System.Text.Encoding]::ASCII)
 
 $stopCmdPath = Join-Path $InstallDir 'Stop AutoSwitch.cmd'
@@ -82,9 +107,9 @@ $shell = New-Object -ComObject WScript.Shell
 $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\AutoSwitch'
 New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
 $iconPath = Join-Path $InstallDir 'AutoSwitch.ico'
-$iconLocation = if (Test-Path $iconPath) { "$iconPath,0" } else { "$NodePath,0" }
+$iconLocation = if (Test-Path $iconPath) { "$iconPath,0" } else { "$ExePath,0" }
 $wscript = Join-Path $env:WINDIR 'System32\wscript.exe'
-$launchTarget = '"' + $vbsPath + '"'
+$daemonTarget = '"' + $vbsPath + '"'
 
 function New-AppShortcut {
   param([string]$Path, [string]$Target, [string]$Arguments, [string]$Description)
@@ -97,8 +122,8 @@ function New-AppShortcut {
   $shortcut.Save()
 }
 
-New-AppShortcut -Path (Join-Path $startMenuDir 'AutoSwitch.lnk') -Target $wscript `
-  -Arguments $launchTarget -Description 'AutoSwitch 每日积分领航'
+New-AppShortcut -Path (Join-Path $startMenuDir 'AutoSwitch.lnk') -Target $ExePath `
+  -Arguments '' -Description 'AutoSwitch 每日积分领航'
 New-AppShortcut -Path (Join-Path $startMenuDir '卸载 AutoSwitch.lnk') `
   -Target (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') `
   -Arguments ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'uninstall.ps1') + '"') `
@@ -111,8 +136,8 @@ if (-not $NoDesktopShortcut) {
     try { $desktop = (New-Item -ItemType Directory -Force -Path $candidate).FullName } catch { continue }
     if ($desktops -contains $desktop) { continue }
     $desktops += $desktop
-    New-AppShortcut -Path (Join-Path $desktop 'AutoSwitch.lnk') -Target $wscript `
-      -Arguments $launchTarget -Description 'AutoSwitch 每日积分领航'
+    New-AppShortcut -Path (Join-Path $desktop 'AutoSwitch.lnk') -Target $ExePath `
+      -Arguments '' -Description 'AutoSwitch 每日积分领航'
   }
   foreach ($desktop in $desktops) { Write-Host "桌面快捷方式：$(Join-Path $desktop 'AutoSwitch.lnk')" }
 }
@@ -137,14 +162,14 @@ if (-not $NoAutoStart) {
       -Arguments ('"' + $silentVbs + '"') -Description 'AutoSwitch 开机自启'
   } else {
     Remove-Item (Join-Path $startupDir 'AutoSwitch.lnk') -Force -ErrorAction SilentlyContinue
-    Write-Host '开机自启：计划任务 AutoSwitch（登录时静默启动，不弹浏览器）。'
+    Write-Host '开机自启：计划任务 AutoSwitch（登录时静默启动后台服务，不弹窗）。'
   }
 }
 
 if (-not $NoLaunch) {
   try {
-    Start-Process -FilePath $wscript -ArgumentList $launchTarget -WorkingDirectory $InstallDir
-    Write-Host '已自动启动 AutoSwitch，面板地址 http://127.0.0.1:47871'
+    Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
+    Write-Host '已打开 AutoSwitch 窗口（后台服务未运行时会自动拉起）。'
   } catch {
     Write-Host '自动启动失败，请双击桌面或开始菜单的 AutoSwitch。'
   }
@@ -152,6 +177,7 @@ if (-not $NoLaunch) {
 
 Write-Host ''
 Write-Host '安装完成。'
-Write-Host '桌面 / 开始菜单 → AutoSwitch 启动。'
+Write-Host '桌面 / 开始菜单 → AutoSwitch 打开窗口；关闭窗口只收起界面，后台领取继续。'
+Write-Host '退出后台服务：Stop AutoSwitch.cmd，或托盘图标右键「退出 AutoSwitch」关闭窗口。'
 Write-Host "数据目录：$env:LOCALAPPDATA\AutoSwitch"
 Write-Host "命令行：`"$NodePath`" `"$CliPath`" doctor"
