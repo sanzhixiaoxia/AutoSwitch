@@ -336,7 +336,7 @@ function renderHero(accounts) {
   </section>`;
 }
 
-function renderPlatformCard(provider, accounts) {
+function renderPlatformRow(provider, accounts) {
   const meta = metaOf(provider);
   const agg = aggregate(accounts);
   const done = accounts.filter((account) => isDone(account.today?.status)).length;
@@ -349,29 +349,25 @@ function renderPlatformCard(provider, accounts) {
   const primary = accounts.find((account) => account.isActive) || accounts[0];
   const title = accounts.length === 1 ? primary.name : `${meta.label} · ${accounts.length} 个账号`;
   const sub = accounts.length === 1 ? primary.email || primary.phoneHint || primary.uid : "多账号已保存";
-  return `<article class="platform-card" style="${providerStyle(provider)}">
-    <div class="platform-head">
-      <div class="platform-id">
-        <div class="platform-logo">${esc(meta.avatar)}</div>
-        <div><h3>${esc(title)}</h3><p>${esc(sub)}</p></div>
-      </div>
-      ${badge(agg.status, agg.label)}
+  return `<div class="platform-row" style="${providerStyle(provider)}">
+    <div class="platform-id">
+      <div class="platform-logo">${esc(meta.avatar)}</div>
+      <div class="platform-name"><h3>${esc(title)}</h3><p>${esc(sub)}</p></div>
     </div>
-    <div class="platform-body">
-      <div class="metric-row"><span>今日进度</span><strong>${done} / ${accounts.length}</strong></div>
-      <div class="metric-row"><span>剩余额度</span><strong class="big">${quota === null ? "—" : esc(fmtAmount(quota))}</strong></div>
-      <div class="metric-row"><span>最近领取</span><strong>${latest ? esc(fmtShort(latest)) : "—"}</strong></div>
-      <div class="platform-actions">
-        ${
-          accounts.length
-            ? `<button class="btn small primary" data-action="claim-provider" data-provider="${esc(provider)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
-               <button class="btn small" data-action="go-accounts">管理</button>`
-            : `<button class="btn small" data-action="import">${icon("download")}导入</button>
-               <button class="btn small" data-action="add-account">${icon("plus")}添加</button>`
-        }
-      </div>
+    <div class="row-cell"><span class="row-label">今日进度</span><strong>${done} / ${accounts.length}</strong></div>
+    <div class="row-cell"><span class="row-label">剩余额度</span><strong class="${quota === null ? "" : "big"}">${quota === null ? "—" : esc(fmtAmount(quota))}</strong></div>
+    <div class="row-cell"><span class="row-label">最近领取</span><strong>${latest ? esc(fmtShort(latest)) : "—"}</strong></div>
+    <div class="row-cell row-status"><span class="row-label">状态</span>${badge(agg.status, agg.label)}</div>
+    <div class="platform-actions">
+      ${
+        accounts.length
+          ? `<button class="btn small primary" data-action="claim-provider" data-provider="${esc(provider)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
+             <button class="btn small" data-action="go-accounts">管理</button>`
+          : `<button class="btn small" data-action="import">${icon("download")}导入</button>
+             <button class="btn small" data-action="add-account">${icon("plus")}添加</button>`
+      }
     </div>
-  </article>`;
+  </div>`;
 }
 
 function renderOverview() {
@@ -406,9 +402,12 @@ function renderOverview() {
     : `<div class="feed-row"><span class="feed-dot idle"></span><div class="feed-copy"><strong>还没有领取记录</strong><span>点击「立即领取全部」开始第一次领取。</span></div></div>`;
 
   return `${renderHero(accounts)}
-    <div class="platform-grid">
-      ${Object.keys(PROVIDER_META).map((provider) => renderPlatformCard(provider, grouped[provider] || [])).join("")}
-    </div>
+    <section class="platform-list">
+      <div class="platform-list-head">
+        <span>平台 / 账号</span><span>今日进度</span><span>剩余额度</span><span>最近领取</span><span>状态</span><span>操作</span>
+      </div>
+      ${Object.keys(PROVIDER_META).map((provider) => renderPlatformRow(provider, grouped[provider] || [])).join("")}
+    </section>
     <div class="section-title">
       <div><h2>本轮与最近记录</h2><p>状态按官方接口查询结果和本应用领取记录汇总</p></div>
       <button class="btn small ghost" data-action="go-records">查看全部${icon("chevron")}</button>
