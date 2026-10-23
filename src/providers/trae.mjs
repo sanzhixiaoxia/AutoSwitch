@@ -261,9 +261,10 @@ function seeded(uid, salt, count) {
  * 若服务端 9074 拒绝，重试时轮换派生号。
  */
 export function deriveDevice(uid, attempt = 0) {
-  const deviceId = seeded(String(uid), `devid:${attempt}`, 15)
-    .map((byte) => String(48 + (byte % 10)))
-    .join("");
+  // 客户端真实 x-device-id 是 16 位纯数字；逐字节取一位十进制数，首位保证非 0。
+  const digits = seeded(String(uid), `devid:${attempt}`, 16).map((byte) => String(byte % 10));
+  digits[0] = String(1 + Number(digits[0]) % 9);
+  const deviceId = digits.join("");
   const market = seeded(String(uid), `market:${attempt}`, 16);
   market[6] = (market[6] & 0x0f) | 0x40;
   market[8] = (market[8] & 0x3f) | 0x80;
@@ -280,6 +281,9 @@ export function deriveDevice(uid, attempt = 0) {
 function headersFor(account, attempt) {
   const uid = account.uid || uidFromJwt(account.token);
   const device = deriveDevice(uid || "anonymous", attempt);
+  // 导入时记下的是客户端真实设备号（机器级），签到接口的风控认它；派生号只作兜底。
+  const realDevice = String(account.meta?.deviceId || "");
+  const deviceId = /^\d{8,32}$/.test(realDevice) ? realDevice : device.deviceId;
   const token = String(account.token || "");
   return {
     accept: "*/*",
@@ -290,7 +294,7 @@ function headersFor(account, attempt) {
     "x-market-client-id": "VSCode 1.107.1",
     "x-market-user-id": device.marketUserId,
     "x-user-region": "CN",
-    "x-device-id": device.deviceId,
+    "x-device-id": deviceId,
     "x-lgw-req-sdk-type": "3",
     "package-type": "stable_cn",
     "x-request-id": crypto.randomBytes(16).toString("hex"),
@@ -479,6 +483,10 @@ export async function claim(account) {
       message: claimed ? `签到成功，+${claimed} 积分` : "签到成功",
     };
   }
+  if (response.code === 9095 || /当前设备今日已经签到/.test(String(response.message || ""))) {
+    // 这台设备今天已经签过了，积分不会进这个账号的账，不能算「已领取」。
+    return { status: "device-limited", amount: null, message: "本机今日已签到过（Trae 按设备每天一次）" };
+  }
   if (alreadyMessage(response.message)) {
     return { status: "already", amount: expected, message: withCode(response.message, response.code) };
   }
@@ -549,5 +557,5 @@ export async function switchTo(store, account, { force = false } = {}) {
   };
 }
 
-export const __testing = { WOE, VOE, JOE, HOE, HEADER, sha512, pepper, saveSlot, restoreSlot };
+export const __testing = { WOE, VOE, JOE, HOE, HEADER, sha512, pepper, saveSlot, restoreSlot, post, headersFor, STATUS_URL, CLAIM_URL };
 

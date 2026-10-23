@@ -58,6 +58,26 @@ test("本轮只有失败/过期记录时，汇总回落到最近一次失败", (
   }
 });
 
+test("本轮权威状态取最近一条：名额已用可覆盖早先误记的已领取", () => {
+  const home = tempHome();
+  try {
+    const log = new LogStore(home);
+    const now = Date.now();
+    const round = traeRoundKey(now);
+    log.append({ type: "claim", at: new Date(now - 4000).toISOString(), provider: "trae", accountId: "trae:f", accountName: "F", status: "already", amount: 100, message: "旧包误记", roundKey: round });
+    log.append({ type: "claim", at: new Date(now).toISOString(), provider: "trae", accountId: "trae:f", accountName: "F", status: "device-limited", amount: null, message: "本机今日已签到过", roundKey: round });
+    log.append({ type: "claim", at: new Date(now - 2000).toISOString(), provider: "trae", accountId: "trae:g", accountName: "G", status: "device-limited", amount: null, message: "先名额已用", roundKey: round });
+    log.append({ type: "claim", at: new Date(now - 1000).toISOString(), provider: "trae", accountId: "trae:g", accountName: "G", status: "claimed", amount: 100, message: "后领到了", roundKey: round });
+
+    const summary = log.summary([{ id: "trae:f", provider: "trae" }, { id: "trae:g", provider: "trae" }], now);
+    assert.equal(summary.accounts.find((row) => row.accountId === "trae:f").status, "device-limited");
+    assert.equal(summary.accounts.find((row) => row.accountId === "trae:g").status, "claimed");
+    assert.equal(summary.done, 1);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("Trae 自然日轮次与 Qoder 轮次相互独立", () => {
   const now = Date.UTC(2026, 9, 22, 1, 0, 0); // 北京时间 09:00
   assert.equal(qoderRoundKey(now), "2026-10-21");

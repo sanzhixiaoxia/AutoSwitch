@@ -61,6 +61,31 @@ export class ClaimEngine {
     }
   }
 
+  recordStatus(account, result, trigger) {
+    const at = new Date().toISOString();
+    const round = roundKey(account.provider, Date.now());
+    const amount = Number.isFinite(Number(result.amount)) ? Number(result.amount) : null;
+    const message = cleanMessage(result.message || "");
+    account.lastClaim = { at, status: result.status, amount, message, roundKey: round };
+    this.store.saveAccounts();
+    this.log.append({
+      type: "claim",
+      at,
+      provider: account.provider,
+      providerLabel: providerMeta(account.provider)?.label || account.provider,
+      accountId: account.id,
+      accountName: account.name || account.uid,
+      trigger,
+      status: result.status,
+      label: STATUS_LABEL[result.status] || result.status,
+      amount,
+      message,
+      roundKey: round,
+      durationMs: null,
+    });
+    return { at, round, amount, message };
+  }
+
   async refreshStatuses({ accountIds, provider } = {}) {
     return this.withLock(async () => {
       syncAll(this.store);
@@ -77,6 +102,8 @@ export class ClaimEngine {
           account.meta = { ...(account.meta || {}), quota: result.quota };
           this.store.saveAccounts();
         }
+        // 刷新状态也要落到本轮记录，否则重新导入凭据后界面还挂着上一次的失败。
+        const recorded = this.recordStatus(account, result, "status");
         results.push({
           accountId: account.id,
           provider: account.provider,
@@ -87,6 +114,7 @@ export class ClaimEngine {
           message: cleanMessage(result.message || ""),
           endAt: result.endAt || null,
           quota: result.quota || account.meta?.quota || null,
+          at: recorded.at,
           checkedAt: new Date().toISOString(),
         });
         if (accounts.length > 1) await sleep(250);
@@ -147,39 +175,14 @@ export class ClaimEngine {
           if (account.provider === "qoder") intlDeviceUsed = true;
         }
 
-        const at = new Date().toISOString();
-        const round = roundKey(account.provider, Date.now());
-        const entry = {
-          type: "claim",
-          at,
-          provider: account.provider,
-          providerLabel: providerMeta(account.provider)?.label || account.provider,
-          accountId: account.id,
-          accountName: account.name || account.uid,
-          trigger,
-          status: result.status,
-          label: STATUS_LABEL[result.status] || result.status,
-          amount: Number.isFinite(Number(result.amount)) ? Number(result.amount) : null,
-          message: cleanMessage(result.message || ""),
-          roundKey: round,
-          durationMs: null,
-        };
-        account.lastClaim = {
-          at,
-          status: result.status,
-          amount: entry.amount,
-          message: entry.message,
-          roundKey: round,
-        };
-        this.store.saveAccounts();
-        this.log.append(entry);
+        const recorded = this.recordStatus(account, result, trigger);
         const enriched = {
           ...base,
           status: result.status,
           label: STATUS_LABEL[result.status] || result.status,
-          amount: entry.amount,
-          message: entry.message,
-          at,
+          amount: recorded.amount,
+          message: recorded.message,
+          at: recorded.at,
         };
         results.push(enriched);
         if (accounts.length > 1) await sleep(this.store.config.claimDelayMs);

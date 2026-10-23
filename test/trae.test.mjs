@@ -27,8 +27,8 @@ test("Trae 设备号按 uid 稳定派生且为纯数字", () => {
   const a = deriveDevice("1234567890123456", 0);
   const b = deriveDevice("1234567890123456", 0);
   assert.deepEqual(a, b);
-  assert.match(a.deviceId, /^\d+$/);
-  assert.ok(a.deviceId.length >= 15);
+  assert.match(a.deviceId, /^[1-9]\d{15}$/);
+  assert.equal(a.deviceId.length, 16);
   assert.match(a.marketUserId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.match(a.sessionId, /^[0-9a-f]{64}$/);
   assert.notEqual(deriveDevice("1234567890123456", 1).deviceId, a.deviceId);

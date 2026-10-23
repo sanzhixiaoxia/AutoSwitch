@@ -748,8 +748,8 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* ── Platform list ── */
-.platform-list {
+/* ── Account list（总览：一行一个账号）── */
+.data-list {
   display: flex;
   flex-direction: column;
   margin-bottom: 18px;
@@ -760,15 +760,15 @@ body {
   overflow: hidden;
 }
 
-.platform-list-head,
-.platform-row {
+.data-list-head,
+.data-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) 92px 116px 116px 104px auto;
+  grid-template-columns: minmax(0, 1.7fr) 116px 104px 112px 112px auto;
   align-items: center;
   gap: 14px;
 }
 
-.platform-list-head {
+.data-list-head {
   padding: 9px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--panel-2);
@@ -778,71 +778,104 @@ body {
   letter-spacing: 0.03em;
 }
 
-.platform-row {
+.group-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--provider-color, var(--accent)) 6%, var(--panel-2));
+  font-size: 12px;
+}
+
+.data-list-head + .group-row {
+  border-top: 0;
+}
+
+.group-logo {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--provider-color, var(--accent)) 16%, transparent);
+  color: var(--provider-color, var(--accent));
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.group-row strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.group-row em {
+  color: var(--faint);
+  font-size: 11.5px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.data-row {
   position: relative;
-  padding: 12px 16px;
+  padding: 11px 16px 11px 19px;
+  border-top: 1px solid var(--border);
   font-size: 12px;
   transition: background 0.16s;
 }
 
-.platform-row + .platform-row {
-  border-top: 1px solid var(--border);
-}
-
-.platform-row:hover {
+.data-row:hover {
   background: var(--panel-2);
 }
 
-.platform-row::before {
+.data-row::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
   background: var(--provider-color, var(--accent));
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
-.platform-id {
+.row-account {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   min-width: 0;
 }
 
-.platform-logo {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  color: var(--provider-color, var(--accent));
-  background: color-mix(in srgb, var(--provider-color, var(--accent)) 11%, transparent);
-  font-weight: 700;
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
-}
-
-.platform-name {
+.row-account-text {
   min-width: 0;
 }
 
-.platform-name h3 {
-  margin: 0;
+.row-account-text strong {
+  display: block;
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.platform-name p {
-  margin: 2px 0 0;
+.row-account-text span {
+  display: block;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 11.5px;
-  white-space: nowrap;
+  font-size: 11px;
+  font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row-cell {
@@ -857,7 +890,7 @@ body {
 }
 
 .row-cell strong.big {
-  font-size: 15px;
+  font-size: 14.5px;
   letter-spacing: -0.02em;
 }
 
@@ -866,29 +899,10 @@ body {
   color: var(--faint);
 }
 
-.platform-actions {
+.row-actions {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
-}
-
-.platform-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex: 1;
-  padding: 16px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.platform-empty .icon {
-  width: 26px;
-  height: 26px;
-  color: var(--faint);
 }
 
 /* ── Badges / tags ── */
@@ -1035,6 +1049,28 @@ body {
   white-space: nowrap;
 }
 
+.chooser-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chooser-row:hover {
+  background: var(--panel-2);
+}
+
+.chooser-group {
+  padding: 12px 18px 4px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .next-run {
   display: flex;
   flex-direction: column;
@@ -1082,150 +1118,24 @@ body {
   background: var(--border);
 }
 
-/* ── Accounts page ── */
-.page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.page-actions .left,
-.page-actions .right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.provider-block {
-  margin-bottom: 16px;
-}
-
-.provider-block-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0 2px 8px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.provider-block-head .swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 3px;
-  background: var(--provider-color, var(--accent));
-}
-
-.provider-block-head em {
-  margin-left: auto;
-  color: var(--faint);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.account-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
-  padding: 15px 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  margin-bottom: 8px;
-  transition: border-color 0.15s;
-}
-
-.account-card:hover {
-  border-color: var(--border-strong);
-}
-
-.account-main {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
 .account-avatar {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 11px;
+  border-radius: 10px;
   color: var(--provider-color, var(--accent));
   background: color-mix(in srgb, var(--provider-color, var(--accent)) 11%, transparent);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-}
-
-.account-title {
-  min-width: 0;
-}
-
-.account-title strong {
-  display: block;
-  font-size: 13.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-title span {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .account-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 7px;
-}
-
-.account-meta {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.account-meta div span {
-  display: block;
-  color: var(--faint);
-  font-size: 10.5px;
-}
-
-.account-meta div strong {
-  display: block;
-  margin-top: 1px;
-  font-size: 12px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.account-meta .badge {
-  width: fit-content;
-  max-width: 100%;
-}
-
-.account-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  margin-top: 6px;
 }
 
 /* ── Records ── */
@@ -1893,18 +1803,26 @@ td.time-cell {
 
 /* ── Responsive ── */
 @media (max-width: 1080px) {
-  .platform-list-head {
+  .data-list-head {
     display: none;
   }
-  .platform-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 14px;
+  .group-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 6px;
   }
-  .platform-id,
-  .platform-actions {
+  .group-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .data-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+  }
+  .row-account,
+  .row-actions {
     grid-column: 1 / -1;
   }
-  .platform-actions {
+  .row-actions {
     justify-content: flex-start;
   }
   .row-cell .row-label {
@@ -1972,22 +1890,9 @@ td.time-cell {
   .busy-bar {
     margin-inline: 20px;
   }
-  .account-card {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  .account-meta {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .account-actions {
-    justify-content: flex-end;
-  }
 }
 
 @media (max-width: 620px) {
-  .account-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .hero-number strong {
     font-size: 34px;
   }

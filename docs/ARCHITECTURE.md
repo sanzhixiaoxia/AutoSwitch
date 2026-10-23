@@ -183,13 +183,15 @@ user-agent: VSCode 1.107.1 (TRAE SOLO CN)
 x-market-client-id: VSCode 1.107.1
 x-market-user-id: <按 uid 派生的 UUID>
 x-user-region: CN
-x-device-id: <按 uid 派生的纯数字>
+x-device-id: <客户端真实设备号（导入时记录），兜底按 uid 派生 16 位数字>
 package-type: stable_cn
 app-version: 0.1.45
 ...其余 IDE 指纹头
 ```
 
-`x-device-id` 必须是纯数字；传 GUID 会返回 `code 9074`。为了让多个账号能分别领取，本项目按 `uid` 确定性派生设备号，而不是共用客户端真实设备号。`9074` 时依次等待 3/8/15 秒并轮换派生号重试。
+`x-device-id` 必须是**形如客户端的 16 位纯数字**。早期版本按字节拼 ASCII 数字，产出 30 位的畸形值，签到接口一律回 `code 9074 当前参与用户太多`（状态接口却不拦，很容易误判成服务端限流）。现在优先用导入时从客户端读到的真实设备号（机器级，`iCubeAuthInfo://icube-dc:<数字>`），读不到时才用按 `uid` 确定性派生的 16 位数字；`9074` 仍会等待 3/8/15 秒轮换派生号重试。
+
+**Trae CN 的每日签到按设备限一次，不按账号。** 同一台机器当天已签到时，其它账号会返回 `code 9095 当前设备今日已经签到，请明日再来哦～`，本项目归为 `device-limited`（界面显示「本机名额已用」），不计入已领取，也不会反复重试。所以多账号 Trae 无法在同一天各自领取，这是服务端规则，不是本项目的限制。
 
 响应统一为 `{ code, message, ... }`；`checked_in=true` 表示已签。某些失败会用「已经签到」文案返回，归为 `already`。
 

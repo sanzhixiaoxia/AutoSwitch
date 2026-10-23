@@ -49,6 +49,7 @@ const TRIGGER_LABEL = {
   cli: "命令行",
   startup: "启动",
   import: "导入",
+  status: "刷新状态",
   "": "",
 };
 
@@ -110,11 +111,6 @@ function fmtAmount(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
   return Number.isInteger(number) ? String(number) : number.toFixed(1);
-}
-
-function quotaTotal(accounts) {
-  const values = accounts.map((account) => Number(account.quota?.remaining)).filter(Number.isFinite);
-  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
 }
 
 function isDone(status) {
@@ -265,29 +261,18 @@ function renderError(message) {
   </div>`;
 }
 
-function aggregate(accounts) {
-  if (!accounts.length) return { status: "pending", label: "未导入" };
-  const statuses = accounts.map((account) => account.today?.status || "pending");
-  if (statuses.every(isDone)) return { status: "claimed", label: "今日已完成" };
-  if (statuses.some((status) => ["failed", "expired"].includes(status))) return { status: "failed", label: "需要处理" };
-  if (statuses.some((status) => status === "claimable")) return { status: "claimable", label: "可领取" };
-  if (statuses.some((status) => status === "device-limited")) return { status: "device-limited", label: "本机名额已用" };
-  return { status: "pending", label: "待检查" };
-}
-
 function render() {
   if (!app.state) return;
   const { accounts, summary, scheduler } = app.state;
   const titles = {
-    overview: ["总览", `Qoder 轮次 ${summary.round.qoder} · Trae ${summary.round.trae}`],
-    accounts: ["账号", `${accounts.length} 个账号 · 每个平台可保存多个客户端登录`],
+    overview: ["总览", `${accounts.length} 个账号 · Qoder 轮次 ${summary.round.qoder} · Trae ${summary.round.trae}`],
     records: ["记录", "领取、切换与系统事件都保存在本机"],
     settings: ["设置", "自动领取、开机自启与数据安全"],
   };
-  $("#pageTitle").textContent = titles[app.route][0];
-  $("#pageSubtitle").textContent = titles[app.route][1];
+  const page = titles[app.route] || titles.overview;
+  $("#pageTitle").textContent = page[0];
+  $("#pageSubtitle").textContent = page[1];
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.route === app.route));
-  $("#navAccounts").textContent = accounts.length || "";
   $("#versionText").textContent = `v${app.state.app.version}`;
   const projectLink = $("#projectLink");
   if (projectLink) projectLink.href = app.state.app.repoUrl || PROJECT_URL;
@@ -297,8 +282,7 @@ function render() {
   if (autoText) autoText.textContent = !scheduler.autoClaim ? "关闭" : scheduler.running ? "开启" : "未运行";
 
   const content = $("#content");
-  if (app.route === "accounts") content.innerHTML = renderAccounts();
-  else if (app.route === "records") content.innerHTML = renderRecords();
+  if (app.route === "records") content.innerHTML = renderRecords();
   else if (app.route === "settings") content.innerHTML = renderSettings();
   else content.innerHTML = renderOverview();
   if (app.busy) setBusy(true, $("#busyText")?.textContent || "正在处理…");
@@ -324,6 +308,7 @@ function renderHero(accounts) {
       <div class="hero-actions">
         <button class="btn primary" data-action="claim-all" ${total === 0 || app.busy ? "disabled" : ""}>${icon("play")}立即领取全部</button>
         <button class="btn" data-action="refresh-status" ${total === 0 || app.busy ? "disabled" : ""}>${icon("refresh")}刷新状态</button>
+        <button class="btn ghost" data-action="add-account" ${app.busy ? "disabled" : ""}>${icon("plus")}添加账号</button>
         <button class="btn ghost" data-action="import" ${app.busy ? "disabled" : ""}>${icon("download")}导入本机账号</button>
       </div>
     </div>
@@ -336,58 +321,81 @@ function renderHero(accounts) {
   </section>`;
 }
 
-function renderPlatformRow(provider, accounts) {
-  const meta = metaOf(provider);
-  const agg = aggregate(accounts);
-  const done = accounts.filter((account) => isDone(account.today?.status)).length;
-  const quota = quotaTotal(accounts);
-  const latest = accounts
-    .map((account) => account.today?.at)
-    .filter(Boolean)
-    .sort()
-    .at(-1);
-  const primary = accounts.find((account) => account.isActive) || accounts[0];
-  const title = accounts.length === 1 ? primary.name : `${meta.label} · ${accounts.length} 个账号`;
-  const sub = accounts.length === 1 ? primary.email || primary.phoneHint || primary.uid : "多账号已保存";
-  return `<div class="platform-row" style="${providerStyle(provider)}">
-    <div class="platform-id">
-      <div class="platform-logo">${esc(meta.avatar)}</div>
-      <div class="platform-name"><h3>${esc(title)}</h3><p>${esc(sub)}</p></div>
+function accountTags(account) {
+  const sourceLabel = { "workbuddy-switch": "WorkBuddy Switch", device: "浏览器登录", browser: "浏览器登录", local: "客户端导入" }[account.source] || "客户端导入";
+  const tags = [account.isActive ? `<span class="tag active">当前登录</span>` : "", `<span class="tag">${esc(sourceLabel)}</span>`];
+  if (account.provider === "workbuddy") tags.push(`<span class="tag">用 Switch 切换</span>`);
+  else if (account.hasSnapshot) tags.push(account.isActive ? "" : `<span class="tag">可切换</span>`);
+  else tags.push(`<span class="tag">无切号快照</span>`);
+  if (account.expired) tags.push(`<span class="tag" style="color:var(--red);border-color:var(--red)">凭据过期</span>`);
+  return tags.filter(Boolean).join("");
+}
+
+function renderAccountRow(account) {
+  const meta = metaOf(account.provider);
+  const status = account.today?.status || "pending";
+  const expiry = expiryInfo(account);
+  const quota = Number(account.quota?.remaining);
+  const switchTitle = account.isActive
+    ? "已经是当前登录账号"
+    : account.hasSnapshot
+      ? "关闭并重启客户端以切换登录"
+      : account.provider === "workbuddy"
+        ? "WorkBuddy 请使用 WorkBuddy Switch 切换"
+        : "浏览器登录的账号没有客户端快照";
+  return `<div class="data-row" style="${providerStyle(account.provider)}">
+    <div class="row-account">
+      <div class="account-avatar">${esc(meta.avatar)}</div>
+      <div class="row-account-text">
+        <strong>${esc(account.name || account.uid || "未命名账号")}</strong>
+        <span>${esc(account.email || account.phoneHint || account.uid || "")}</span>
+        <div class="account-tags">${accountTags(account)}</div>
+      </div>
     </div>
-    <div class="row-cell"><span class="row-label">今日进度</span><strong>${done} / ${accounts.length}</strong></div>
-    <div class="row-cell"><span class="row-label">剩余额度</span><strong class="${quota === null ? "" : "big"}">${quota === null ? "—" : esc(fmtAmount(quota))}</strong></div>
-    <div class="row-cell"><span class="row-label">最近领取</span><strong>${latest ? esc(fmtShort(latest)) : "—"}</strong></div>
-    <div class="row-cell row-status"><span class="row-label">状态</span>${badge(agg.status, agg.label)}</div>
-    <div class="platform-actions">
-      ${
-        accounts.length
-          ? `<button class="btn small primary" data-action="claim-provider" data-provider="${esc(provider)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
-             <button class="btn small" data-action="go-accounts">管理</button>`
-          : `<button class="btn small" data-action="import">${icon("download")}导入</button>
-             <button class="btn small" data-action="add-account">${icon("plus")}添加</button>`
-      }
+    <div class="row-cell"><span class="row-label">今日状态</span>${badge(status)}</div>
+    <div class="row-cell"><span class="row-label">剩余额度</span><strong class="${Number.isFinite(quota) ? "big" : ""}">${Number.isFinite(quota) ? esc(fmtAmount(quota)) : "—"}</strong></div>
+    <div class="row-cell"><span class="row-label">最近领取</span>${account.today?.at ? esc(fmtShort(account.today.at)) : "—"}</div>
+    <div class="row-cell"><span class="row-label">凭据到期</span><span class="${expiry.cls}">${esc(expiry.text)}</span></div>
+    <div class="row-actions">
+      <button class="btn small primary" data-action="claim-account" data-id="${esc(account.id)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
+      <button class="btn small" data-action="switch-account" data-id="${esc(account.id)}" ${!account.hasSnapshot || account.isActive || app.busy ? "disabled" : ""} title="${esc(switchTitle)}">${icon("switch")}切换</button>
+      <button class="btn small danger icon-only" data-action="delete-account" data-id="${esc(account.id)}" title="移除账号" ${app.busy ? "disabled" : ""}>${icon("trash")}</button>
     </div>
   </div>`;
 }
 
+function renderProviderGroup(provider, accounts, client) {
+  const meta = metaOf(provider);
+  const clientText = client ? (client.installed ? `客户端${client.running ? "运行中" : "未运行"}${client.signedIn ? " · 已登录" : " · 未登录"}` : "未安装客户端") : "";
+  const hint = provider === "workbuddy" ? "token 由 WorkBuddy Switch 保管" : provider === "trae" ? "登录态取自本机客户端" : "支持浏览器设备码登录";
+  const done = accounts.filter((account) => isDone(account.today?.status)).length;
+  return `<div class="group-row" style="${providerStyle(provider)}">
+    <span class="group-logo">${esc(meta.avatar)}</span>
+    <strong>${esc(meta.label)}</strong>
+    <em>${esc([clientText, accounts.length ? `已保存 ${accounts.length} 个 · 今日 ${done}/${accounts.length}` : "还没有账号", hint].filter(Boolean).join(" · "))}</em>
+    <span class="group-actions">
+      ${
+        accounts.length
+          ? `<button class="btn small" data-action="claim-provider" data-provider="${esc(provider)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取全部</button>`
+          : provider === "workbuddy"
+            ? `<button class="btn small primary" data-action="import-workbuddy" ${app.busy ? "disabled" : ""}>${icon("download")}从 Switch 导入</button>`
+            : `<button class="btn small primary" data-action="import" ${app.busy ? "disabled" : ""}>${icon("download")}导入本机</button>${provider === "qoder" || provider === "qoder-cn" ? `<button class="btn small" data-action="login" data-provider="${esc(provider)}" ${app.busy ? "disabled" : ""}>${icon("plus")}浏览器登录</button>` : ""}`
+      }
+    </span>
+  </div>`;
+}
+
 function renderOverview() {
-  const { accounts } = app.state;
+  const { accounts, clients } = app.state;
   const grouped = Object.fromEntries(Object.keys(PROVIDER_META).map((provider) => [provider, []]));
   for (const account of accounts) (grouped[account.provider] ||= []).push(account);
-  const recent = app.logs.filter((entry) => entry.type === "claim").slice(0, 6);
-  const roundRows = accounts
-    .slice()
-    .sort((a, b) => (STATUS[a.today?.status] ? 0 : 1) - (STATUS[b.today?.status] ? 0 : 1))
-    .map((account) => {
-      const status = account.today?.status || "pending";
-      const tone = isDone(status) ? "" : status === "failed" || status === "expired" ? "bad" : status === "pending" ? "idle" : "warn";
-      return `<div class="feed-row">
-        <span class="feed-dot ${tone}"></span>
-        <div class="feed-copy"><strong>${esc(account.name)}</strong><span>${esc(account.providerLabel)} · ${esc(STATUS[status]?.label || status)}${account.today?.message ? ` · ${esc(account.today.message)}` : ""}</span></div>
-        <span class="feed-time">${account.today?.amount ? `+${esc(fmtAmount(account.today.amount))}` : ""}</span>
-      </div>`;
-    })
-    .join("");
+  const rows = [];
+  for (const provider of Object.keys(PROVIDER_META)) {
+    const list = grouped[provider] || [];
+    rows.push(renderProviderGroup(provider, list, clients.find((row) => row.provider === provider)));
+    for (const account of list) rows.push(renderAccountRow(account));
+  }
+  const recent = app.logs.filter((entry) => entry.type === "claim").slice(0, 8);
   const feed = recent.length
     ? recent
         .map((entry) => {
@@ -400,16 +408,30 @@ function renderOverview() {
         })
         .join("")
     : `<div class="feed-row"><span class="feed-dot idle"></span><div class="feed-copy"><strong>还没有领取记录</strong><span>点击「立即领取全部」开始第一次领取。</span></div></div>`;
+  const clientRows = clients
+    .map((client) => {
+      const tone = client.installed && client.signedIn ? "" : client.installed ? "warn" : "idle";
+      const detail = client.installed
+        ? `${client.running ? "运行中" : "未运行"} · ${client.signedIn ? "已登录" : "未登录"}${client.version ? ` · v${client.version}` : ""}${client.switchVault ? " · 有 Switch 账号库" : ""}`
+        : "未安装客户端";
+      return `<div class="feed-row">
+        <span class="feed-dot ${tone}"></span>
+        <div class="feed-copy"><strong>${esc(metaOf(client.provider).label)}</strong><span>${esc(detail)}</span></div>
+        <span class="feed-time">${esc(client.name || "")}</span>
+      </div>`;
+    })
+    .join("");
 
   return `${renderHero(accounts)}
-    <section class="platform-list">
-      <div class="platform-list-head">
-        <span>平台 / 账号</span><span>今日进度</span><span>剩余额度</span><span>最近领取</span><span>状态</span><span>操作</span>
+    <section class="data-list">
+      <div class="data-list-head">
+        <span>账号</span><span>今日状态</span><span>剩余额度</span><span>最近领取</span><span>凭据到期</span><span>操作</span>
       </div>
-      ${Object.keys(PROVIDER_META).map((provider) => renderPlatformRow(provider, grouped[provider] || [])).join("")}
+      ${rows.join("")}
     </section>
+    <div class="info-box" style="margin-top:14px">${icon("info")}<div><strong>多账号说明</strong><br />领取用已保存的 token 走官方接口，不需要切换客户端；「切换」只用于把桌面客户端登录换成该账号。Qoder 可用「浏览器登录」直接加账号；Trae 需要先在客户端登录另一个账号再导入。每台设备每天限领：Qoder 国际版一个账号、Trae CN 一个账号，超出的账号显示「本机名额已用」。WorkBuddy 的 token 由 WorkBuddy Switch 保管，过期后请在 Switch 里重新登录再导入。</div></div>
     <div class="section-title">
-      <div><h2>本轮与最近记录</h2><p>状态按官方接口查询结果和本应用领取记录汇总</p></div>
+      <div><h2>最近领取与本机客户端</h2><p>状态按官方接口查询结果和本应用领取记录汇总</p></div>
       <button class="btn small ghost" data-action="go-records">查看全部${icon("chevron")}</button>
     </div>
     <div class="lower-grid">
@@ -418,8 +440,8 @@ function renderOverview() {
         <div class="feed">${feed}</div>
       </section>
       <section class="panel">
-        <div class="panel-head"><div class="panel-title">${icon("users")}<h2>本轮账号</h2></div><span class="tiny faint">${app.state.summary.done}/${app.state.summary.total}</span></div>
-        <div class="feed">${roundRows || `<div class="feed-row"><span class="feed-dot idle"></span><div class="feed-copy"><strong>暂无账号</strong><span>先导入本机客户端账号。</span></div></div>`}</div>
+        <div class="panel-head"><div class="panel-title">${icon("monitor")}<h2>本机客户端</h2></div><span class="tiny faint">${clients.filter((row) => row.installed).length}/${clients.length} 已安装</span></div>
+        <div class="feed">${clientRows}</div>
       </section>
     </div>
     ${accounts.length === 0 ? renderEmptyAccounts() : ""}`;
@@ -435,95 +457,6 @@ function renderEmptyAccounts() {
       <button class="btn" data-action="add-account">${icon("plus")}浏览器登录 Qoder</button>
     </div>
   </div>`;
-}
-
-function renderAccountCard(account) {
-  const meta = metaOf(account.provider);
-  const expiry = expiryInfo(account);
-  const status = account.today?.status || "pending";
-  const sourceLabel = {
-    "workbuddy-switch": "WorkBuddy Switch",
-    device: "浏览器登录",
-    browser: "浏览器登录",
-    local: "客户端导入",
-  }[account.source] || "客户端导入";
-  const tags = [
-    account.isActive ? `<span class="tag active">当前登录</span>` : "",
-    `<span class="tag">${sourceLabel}</span>`,
-    account.hasSnapshot
-      ? account.isActive ? "" : `<span class="tag">可切换</span>`
-      : account.provider === "workbuddy" ? `<span class="tag">用 Switch 切换</span>` : `<span class="tag">无切号快照</span>`,
-    account.expired ? `<span class="tag" style="color:var(--red);border-color:var(--red)">凭据过期</span>` : "",
-  ]
-    .filter(Boolean)
-    .join("");
-  return `<div class="account-card" style="${providerStyle(account.provider)}">
-    <div class="account-main">
-      <div class="account-avatar">${esc(meta.avatar)}</div>
-      <div class="account-title">
-        <strong>${esc(account.name)}</strong>
-        <span>${esc(account.uid)}</span>
-        <div class="account-tags">${tags}</div>
-      </div>
-    </div>
-    <div class="account-meta">
-      <div><span>本轮状态</span><strong>${badge(status)}</strong></div>
-      <div><span>剩余额度</span><strong>${account.quota?.remaining !== undefined ? esc(fmtAmount(account.quota.remaining)) : "—"}</strong></div>
-      <div><span>凭据到期</span><strong class="${expiry.cls}">${esc(expiry.text)}</strong></div>
-      <div><span>最近领取</span><strong>${account.today?.at ? esc(fmtShort(account.today.at)) : "—"}</strong></div>
-    </div>
-    <div class="account-actions">
-      <button class="btn small primary" data-action="claim-account" data-id="${esc(account.id)}" ${app.busy ? "disabled" : ""}>${icon("play")}领取</button>
-      <button class="btn small" data-action="switch-account" data-id="${esc(account.id)}" ${!account.hasSnapshot || account.isActive || app.busy ? "disabled" : ""} title="${account.isActive ? "已经是当前登录账号" : account.hasSnapshot ? "关闭并重启客户端以切换登录" : account.provider === "workbuddy" ? "WorkBuddy 请使用 WorkBuddy Switch 切换" : "浏览器登录的账号没有客户端快照"}">${icon("switch")}切换</button>
-      <button class="btn small danger icon-only" data-action="delete-account" data-id="${esc(account.id)}" title="移除账号" ${app.busy ? "disabled" : ""}>${icon("trash")}</button>
-    </div>
-  </div>`;
-}
-
-function renderAccounts() {
-  const { accounts, clients } = app.state;
-  const grouped = Object.fromEntries(Object.keys(PROVIDER_META).map((provider) => [provider, []]));
-  for (const account of accounts) (grouped[account.provider] ||= []).push(account);
-  const blocks = Object.keys(PROVIDER_META)
-    .map((provider) => {
-      const meta = metaOf(provider);
-      const list = grouped[provider] || [];
-      const client = clients.find((row) => row.provider === provider);
-      const clientText = client
-        ? client.installed
-          ? `客户端${client.running ? "运行中" : "未运行"}${client.signedIn ? " · 已登录" : " · 未登录"}`
-          : "未安装客户端"
-        : "";
-      return `<section class="provider-block" style="${providerStyle(provider)}">
-        <div class="provider-block-head"><span class="swatch"></span>${esc(meta.label)}<em>${esc(clientText)}${list.length ? ` · ${list.length} 个账号` : ""}</em></div>
-        ${
-          list.length
-            ? list.map(renderAccountCard).join("")
-            : `<div class="empty" style="min-height:120px;align-items:flex-start;text-align:left;padding:18px">
-                <div class="empty-icon" style="width:40px;height:40px;border-radius:12px">${icon("users")}</div>
-                <div><h3>${esc(meta.label)} 还没有账号</h3><p>${provider === "workbuddy" ? "WorkBuddy 客户端 token 是加密封装，请从 WorkBuddy Switch 导入网页授权账号。" : `在客户端登录后导入${provider === "trae" ? "。" : "，或使用浏览器登录 Qoder。"}`}</p></div>
-                <div class="actions">
-                  ${provider === "workbuddy"
-                    ? `<button class="btn small primary" data-action="import-workbuddy">${icon("download")}从 WorkBuddy Switch 导入</button>`
-                    : `<button class="btn small" data-action="import">${icon("download")}导入本机</button>`}
-                  ${provider === "qoder" || provider === "qoder-cn" ? `<button class="btn small" data-action="login" data-provider="${esc(provider)}">${icon("plus")}浏览器登录</button>` : ""}
-                </div>
-              </div>`
-        }
-      </section>`;
-    })
-    .join("");
-
-  return `<div class="page-actions">
-      <div class="left">
-        <button class="btn primary" data-action="import" ${app.busy ? "disabled" : ""}>${icon("download")}导入本机账号</button>
-        <button class="btn" data-action="add-account" ${app.busy ? "disabled" : ""}>${icon("plus")}添加账号</button>
-        <button class="btn" data-action="refresh-status" ${!accounts.length || app.busy ? "disabled" : ""}>${icon("refresh")}刷新状态</button>
-      </div>
-      <div class="right"><span class="tiny faint">账号凭据只保存在本机，界面不会显示 token</span></div>
-    </div>
-    ${blocks}
-    <div class="info-box" style="margin-top:16px">${icon("info")}<div><strong>多账号说明</strong><br />领取通过官方接口使用已保存的 token 完成，不需要切换客户端；「切换」只用于把桌面客户端登录换成该账号。Qoder 多账号可以直接用「浏览器登录」添加；Trae 多账号需要先在客户端登录另一个账号并导入，再使用切换。浏览器登录的 Qoder 账号没有客户端快照，不能切换。Qoder 国际版每台设备每天只能领取一个账号，其余账号会显示「本机名额已用」。Trae 切换需要重启客户端，应用会先保存当前登录再写入目标账号。</div></div>`;
 }
 
 function renderRecords() {
@@ -896,27 +829,35 @@ function confirmAction({ title, message, confirmText = "确认", tone = "warn", 
 }
 
 function openLoginChooser() {
+  const row = (provider, description, attribute) => {
+    const meta = metaOf(provider);
+    return `<button class="feed-row chooser-row" ${attribute}>
+      <span class="feed-dot" style="background:${esc(meta.color)}"></span>
+      <div class="feed-copy"><strong>${esc(meta.label)}</strong><span>${esc(description)}</span></div>
+      ${icon("chevron")}
+    </button>`;
+  };
   showModal({
-    title: "添加 Qoder 账号",
-    subtitle: "浏览器设备码登录会生成独立 token，不改变桌面客户端当前登录。",
+    title: "添加账号",
+    subtitle: "Qoder 支持浏览器设备码登录；Trae CN 与 WorkBuddy 只能从本机已登录的客户端导入。",
     iconName: "plus",
     body: `<div class="feed">
-      <button class="feed-row" style="border:0;background:transparent;cursor:pointer;width:100%;text-align:left" data-login-provider="qoder">
-        <span class="feed-dot" style="background:#7c5cff"></span>
-        <div class="feed-copy"><strong>Qoder 国际版</strong><span>qoder.com · 每台设备每天限领一个国际版账号</span></div>
-        ${icon("chevron")}
-      </button>
-      <button class="feed-row" style="border:0;background:transparent;cursor:pointer;width:100%;text-align:left" data-login-provider="qoder-cn">
-        <span class="feed-dot" style="background:#0f9d76"></span>
-        <div class="feed-copy"><strong>Qoder 国内版</strong><span>qoder.cn · 不受国际版设备名额限制</span></div>
-        ${icon("chevron")}
-      </button>
+      <div class="chooser-group">浏览器登录（生成独立 token，不动客户端当前登录）</div>
+      ${row("qoder", "qoder.com · 每台设备每天限领一个国际版账号", 'data-login-provider="qoder"')}
+      ${row("qoder-cn", "qoder.cn · 不受国际版设备名额限制", 'data-login-provider="qoder-cn"')}
+      <div class="chooser-group">从本机导入</div>
+      ${row("workbuddy", "读取 WorkBuddy Switch 本机账号库，可一次导入多个账号", "data-import-workbuddy")}
+      ${row("trae", "导入本机 Trae CN 客户端当前登录，需先在客户端登录", "data-import-local")}
     </div>
-    <div class="info-box" style="margin-top:12px">${icon("info")}<div>浏览器登录 token 约 30 天有效，过期后重新登录即可。也可以直接在客户端登录后使用「导入本机账号」。</div></div>`,
+    <div class="info-box" style="margin-top:12px">${icon("info")}<div>Trae CN 和 WorkBuddy 没有可独立保存的浏览器登录：Trae 的登录态只在本机客户端里，WorkBuddy 的 token 由 WorkBuddy Switch 加密保管。浏览器登录 token 约 30 天有效，过期后重新登录即可。</div></div>`,
     onMount: (modal, closeModal) => {
       modal.querySelector("[data-import-workbuddy]")?.addEventListener("click", () => {
         closeModal();
         importWorkBuddy();
+      });
+      modal.querySelector("[data-import-local]")?.addEventListener("click", () => {
+        closeModal();
+        runImport();
       });
       $$("[data-login-provider]", modal).forEach((button) =>
         button.addEventListener("click", () => {
@@ -1249,8 +1190,16 @@ function initTheme() {
 }
 
 /* ── Routing / events ── */
+const ROUTES = new Set(["overview", "records", "settings"]);
+
+// 「账号」页已并入「总览」，旧链接与收藏仍然可用。
+function normalizeRoute(route) {
+  if (route === "accounts") return "overview";
+  return ROUTES.has(route) ? route : "overview";
+}
+
 function setRoute(route) {
-  if (!["overview", "accounts", "records", "settings"].includes(route)) route = "overview";
+  route = normalizeRoute(route);
   const target = `#/${route}`;
   if (location.hash === target) {
     app.route = route;
@@ -1266,8 +1215,8 @@ function bindEvents() {
     if (button) setRoute(button.dataset.route);
   });
   window.addEventListener("hashchange", () => {
-    const route = location.hash.replace(/^#\/?/, "");
-    if (["overview", "accounts", "records", "settings"].includes(route) && route !== app.route) {
+    const route = normalizeRoute(location.hash.replace(/^#\/?/, ""));
+    if (route !== app.route) {
       app.route = route;
       render();
     }
@@ -1285,7 +1234,6 @@ function bindEvents() {
     if (!target) return;
     const action = target.dataset.action;
     if (action === "retry-state") return refreshData();
-    if (action === "go-accounts") return setRoute("accounts");
     if (action === "go-records") return setRoute("records");
     if (action === "go-settings") return setRoute("settings");
     if (action === "claim-all") return runClaim({});
@@ -1354,7 +1302,7 @@ function init() {
   initTheme();
   bindEvents();
   const hash = location.hash.replace(/^#\/?/, "");
-  app.route = ["overview", "accounts", "records", "settings"].includes(hash) ? hash : "overview";
+  app.route = normalizeRoute(hash);
   refreshData().then((ok) => {
     if (ok) loadCachedUpdate();
     startPolling();

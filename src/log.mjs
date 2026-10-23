@@ -65,7 +65,9 @@ export class LogStore {
       if (entry.type !== "claim") continue;
       if (entry.accountId !== accountId) continue;
       if (entry.roundKey !== currentRound) continue;
-      if (["claimed", "already"].includes(entry.status)) return entry;
+      // 取本轮最近一条「权威状态」：领取成功、服务端确认已领、或本机名额已用；
+      // 失败/过期/仅查询不覆盖它，但名额已用可以覆盖早先误记的「已领取」。
+      if (["claimed", "already", "device-limited"].includes(entry.status)) return entry;
       failure ??= entry;
     }
     // 本轮没有成功记录时，用最近一次失败/过期说明状态，别让界面显示成「待检查」。
