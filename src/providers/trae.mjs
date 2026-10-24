@@ -150,7 +150,8 @@ function copyEntry(source, destination) {
 }
 
 export function saveSlot(home, trae, uid) {
-  if (!uid) return 0;
+  const failures = [];
+  if (!uid) return { count: 0, failures: ["没有 uid"] };
   const destination = slotDir(home, uid);
   if (fs.existsSync(destination)) {
     fs.rmSync(`${destination}.bak`, { recursive: true, force: true });
@@ -168,13 +169,16 @@ export function saveSlot(home, trae, uid) {
     try {
       copyEntry(source, path.join(destination, ...relative.split("/")));
       count++;
-    } catch {}
+    } catch (error) {
+      failures.push(`${relative}（${copyReason(error)}）`);
+    }
   }
-  return count;
+  return { count, failures };
 }
 
 function restoreSlot(home, trae, uid) {
   const sourceRoot = slotDir(home, uid);
+  const failures = [];
   let count = 0;
   for (const relative of SLOT_ITEMS) {
     const source = path.join(sourceRoot, ...relative.split("/"));
@@ -182,9 +186,17 @@ function restoreSlot(home, trae, uid) {
     try {
       copyEntry(source, path.join(trae.dataDir, ...relative.split("/")));
       count++;
-    } catch {}
+    } catch (error) {
+      failures.push(`${relative}（${copyReason(error)}）`);
+    }
   }
-  return count;
+  return { count, failures };
+}
+
+function copyReason(error) {
+  if (error?.code) return error.code;
+  const text = String(error?.message || "未知错误").split("\n")[0];
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 
 export function importLocal(store) {
@@ -209,12 +221,13 @@ export function importLocal(store) {
   const existing = store.findByUid(TRAE_PROVIDER, live.uid);
   const { account, created } = store.upsertAccount(accountInputFromLive(live));
   try {
-    const count = saveSlot(store.home, live.trae, live.uid);
+    const { count, failures } = saveSlot(store.home, live.trae, live.uid);
     account.meta = {
       ...(account.meta || {}),
       slot: count > 0,
       slotSavedAt: new Date().toISOString(),
     };
+    if (failures.length) account.meta.slotError = failures.join("；");
     store.saveAccounts();
   } catch (error) {
     account.meta = { ...(account.meta || {}), slotError: cleanMessage(error.message) };
@@ -522,38 +535,59 @@ export async function switchTo(store, account, { force = false } = {}) {
   const wasRunning = trae.running;
   if (wasRunning) {
     const result = await terminateProcesses(traeExeNames(trae));
-    if (!result.closed) throw new Error("无法关闭 Trae，请手动退出后重试");
+    if (!result.closed) {
+      throw new Error(`无法关闭 Trae（${traeExeNames(trae).join("、")} 仍在运行），请手动完全退出客户端后重试`);
+    }
   }
-  let current = null;
-  try {
-    current = readLiveAuth();
-  } catch (error) {
-    throw new Error(`无法保存当前 Trae 登录态，切换已取消：${error.message}`);
+  // 关闭后再读一次 storage.json，很容易撞上 Trae 退出时写了一半的文件；
+  // 直接沿用杀掉之前读到的登录态当作「当前账号」。
+  let current = live;
+  if (!current) {
+    try {
+      current = readLiveAuth();
+    } catch (error) {
+      throw new Error(`无法保存当前 Trae 登录态，切换已取消：${error.message}`);
+    }
   }
   if (current && String(current.uid) !== String(account.uid)) {
     try {
-      const count = saveSlot(store.home, current.trae, current.uid);
-      if (!count) throw new Error("快照文件为空");
+      const { count, failures } = saveSlot(store.home, current.trae, current.uid);
+      if (!count) throw new Error(`一个登录文件都没读到${failures.length ? `：${failures.join("；")}` : ""}`);
       const existing = store.findByUid(TRAE_PROVIDER, current.uid);
       store.upsertAccount({ ...accountInputFromLive(current), source: existing?.source || "local" });
     } catch (error) {
       throw new Error(`无法保存当前 Trae 登录态，切换已取消：${error.message}`);
     }
   }
-  const restored = restoreSlot(store.home, trae, account.uid);
-  if (!restored) throw new Error("恢复 Trae 登录态失败：快照文件缺失");
+  const restore = restoreSlot(store.home, trae, account.uid);
+  if (!restore.count) {
+    throw new Error(
+      `恢复 Trae 登录态失败：快照里没有可写入的文件${restore.failures.length ? `（${restore.failures.join("；")}）` : ""}`,
+    );
+  }
+  // 只把文件拷回去不等于切成功：读一遍落盘的登录态，确认客户端启动后会看到的就是目标账号。
+  let landed = null;
+  try {
+    landed = readLiveAuth();
+  } catch {}
+  if (landed && String(landed.uid) !== String(account.uid)) {
+    throw new Error(
+      `写入后本机登录态仍是 ${landed.uid}，不是目标账号 ${account.uid}；这份快照不可用，请在 Trae 里重新登录该账号后再导入`,
+    );
+  }
   store.markLiveActive(TRAE_PROVIDER, account.uid);
   if (wasRunning) {
     if (!trae.exe) throw new Error("登录态已切换，但找不到 Trae 可执行文件，请手动启动客户端");
     await sleep(500);
     launchClient(trae.exe);
   }
+  const warning = restore.failures.length ? `，但有 ${restore.failures.length} 个文件没写入成功（${restore.failures[0]}）` : "";
   return {
     switched: true,
     alreadyActive: false,
     restarted: wasRunning,
-    restored,
-    message: `已切换到 ${account.name || account.uid}${wasRunning ? "，Trae 已重新启动" : ""}`,
+    restored: restore.count,
+    message: `已切换到 ${account.name || account.uid}${wasRunning ? "，Trae 已重新启动" : ""}${warning}`,
   };
 }
 

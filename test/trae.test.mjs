@@ -59,13 +59,14 @@ test("Trae 登录快照保存与恢复，缓存目录不进入快照", () => {
       fs.writeFileSync(path.join(dir, "Cache", "cache.bin"), value);
     }
     const saved = __testing.saveSlot(home, { dataDir: dataA }, "user-1");
-    assert.ok(saved >= 2);
+    assert.ok(saved.count >= 2);
+    assert.deepEqual(saved.failures, []);
     const slot = path.join(home, "trae-slots", "user-1");
     assert.equal(fs.readFileSync(path.join(slot, "User", "globalStorage", "storage.json"), "utf8"), '{"value":"A"}');
     assert.equal(fs.existsSync(path.join(slot, "Cache")), false);
 
     const restored = __testing.restoreSlot(home, { dataDir: dataB }, "user-1");
-    assert.ok(restored >= 2);
+    assert.ok(restored.count >= 2);
     assert.equal(fs.readFileSync(path.join(dataB, "User", "globalStorage", "storage.json"), "utf8"), '{"value":"A"}');
     assert.equal(fs.readFileSync(path.join(dataB, "machineid"), "utf8"), "A");
     assert.equal(fs.readFileSync(path.join(dataB, "Cache", "cache.bin"), "utf8"), "B");

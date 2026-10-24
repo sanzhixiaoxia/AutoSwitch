@@ -37,6 +37,7 @@ const STATUS = {
   error: { label: "失败", cls: "bad" },
   import: { label: "导入", cls: "info" },
   switch: { label: "切换", cls: "violet" },
+  "switch-failed": { label: "切换失败", cls: "bad" },
   login: { label: "登录", cls: "info" },
   remove: { label: "移除", cls: "idle" },
   task: { label: "任务", cls: "info" },

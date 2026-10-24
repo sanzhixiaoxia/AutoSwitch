@@ -212,3 +212,44 @@ test("Trae 可切换性以磁盘快照为准，不依赖 meta.slot 标记", asyn
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("切换失败要写进记录，不能只弹一下就没了", async () => {
+  const home = tempHome();
+  const store = new Store({ home }).init();
+  store.upsertAccount({ provider: "workbuddy", uid: "wb-1", name: "切不动的账号", token: "wb-token" });
+  const log = new LogStore(home);
+  const scheduler = {
+    state: () => ({ autoClaim: false, intervalMinutes: 120, running: false, autoRunning: false, busy: false, lastRun: null, nextRunAt: null, nextRunAtLocal: null, lastError: null }),
+    defer() {},
+    applyConfig() {},
+  };
+  const engine = { busy: false, async claimAll() { return { ok: true, summary: {}, results: [] }; }, async refreshStatuses() { return { ok: true, results: [] }; } };
+  const app = createServer({
+    store,
+    log,
+    engine,
+    scheduler,
+    port: 0,
+    taskStatusFn: () => ({ supported: true, installed: false }),
+    syncAllFn: () => {},
+  });
+  try {
+    const { port } = await app.start();
+    const response = await fetch(`http://127.0.0.1:${port}/api/switch`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-autoswitch": "1" },
+      body: JSON.stringify({ accountId: "workbuddy:wb-1", force: true }),
+    });
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.match(body.error, /WorkBuddy Switch/);
+    const entry = log.read(20).find((item) => item.status === "switch-failed");
+    assert.ok(entry, "记录里应有一条切换失败");
+    assert.equal(entry.provider, "workbuddy");
+    assert.equal(entry.accountName, "切不动的账号");
+    assert.match(entry.message, /^切换失败：/);
+  } finally {
+    await app.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

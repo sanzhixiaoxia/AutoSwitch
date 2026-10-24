@@ -354,18 +354,22 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
           if (!adapter) return sendJson(response, 400, { error: "不支持的平台" });
           try {
             const result = await adapter.switchTo(store, account, { force: body.force === true });
+            const label = account.name || account.uid;
+            const message = result.alreadyActive
+              ? `${label} 已经是当前登录账号，客户端没有变化`
+              : result.message || `已切换到 ${label}`;
             if (!result.alreadyActive) {
               recordSystemEvent(log, {
                 status: "switch",
                 provider: account.provider,
                 accountId: account.id,
                 accountName: account.name,
-                message: result.message || `已切换到 ${account.name || account.uid}`,
+                message,
               });
             }
             return sendJson(response, 200, {
               ok: true,
-              result,
+              result: { ...result, message },
               state: buildState(store, log, scheduler, port, refreshTask()),
             });
           } catch (error) {
@@ -376,6 +380,14 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
                 requiresConfirmation: true,
               });
             }
+            // 切换失败必须留痕：否则用户只看到一个一闪而过的红条，事后无从查起。
+            recordSystemEvent(log, {
+              status: "switch-failed",
+              provider: account.provider,
+              accountId: account.id,
+              accountName: account.name,
+              message: `切换失败：${cleanMessage(error.message || "未知错误", 300)}`,
+            });
             throw error;
           }
         }
