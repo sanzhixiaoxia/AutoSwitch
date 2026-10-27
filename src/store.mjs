@@ -45,6 +45,7 @@ export function resolveHome() {
 export const DEFAULT_CONFIG = {
   port: 47871,
   autoClaim: true,
+  autoStart: true,
   intervalMinutes: 120,
   claimDelayMs: 900,
   createdAt: null,
@@ -59,6 +60,7 @@ function normalizeConfig(raw) {
   return {
     port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULT_CONFIG.port,
     autoClaim: source.autoClaim !== false,
+    autoStart: source.autoStart !== false,
     intervalMinutes: Number.isFinite(interval) && interval >= 15 ? Math.round(interval) : DEFAULT_CONFIG.intervalMinutes,
     claimDelayMs: Number.isFinite(delay) && delay >= 0 ? Math.min(Math.round(delay), 10_000) : DEFAULT_CONFIG.claimDelayMs,
     createdAt: typeof source.createdAt === "string" ? source.createdAt : null,

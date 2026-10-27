@@ -22,7 +22,7 @@
 | **浏览器登录** | Qoder / Qoder CN 支持设备码登录，生成独立账号，不改变客户端当前登录 |
 | **桌面窗口** | Electron 窗口 + 系统托盘，关窗只是收进后台、领取继续；同一界面也能用浏览器打开 |
 | **本地面板** | 总览 / 记录 / 设置三页；总览按平台分组、**一行一个账号**，列出今日状态、剩余额度、最近领取、凭据到期与领取/切换/移除操作；浅色/深色 |
-| **开机自启** | 安装版默认注册 Windows 登录时计划任务，静默启动后台服务；也可一条命令安装/移除 |
+| **开机自启** | 安装版默认注册 Windows 登录时计划任务，静默启动后台服务；设置里一个开关即可关掉，关掉后升级也不会再自动打开 |
 | **安全存储** | Windows DPAPI 保护密钥 + AES-256-GCM 加密账号库；网页接口不返回 token |
 | **项目与更新** | 界面内置 GitHub 项目入口；从 GitHub Releases 检查更新，显示新版本与安装包下载 |
 | **备份与导出** | 密码加密的账号/设置备份与恢复；导出账号清单 JSON、领取记录 CSV（不含 token） |
@@ -130,7 +130,7 @@ npm run dist
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1 -NoLaunch -NoAutoStart -NoDesktopShortcut
 ```
 
-计划任务注册失败时，安装器会在「启动」文件夹放一个 `AutoSwitch.lnk` 兜底实现开机自启；随时可以用面板「设置」或 `node.exe app\bin\autoswitch.mjs task install|status|uninstall` 管理。
+计划任务注册失败时，安装器会在「启动」文件夹放一个 `AutoSwitch.lnk` 兜底实现开机自启；随时可以用面板「设置 → 开机自启」的开关或 `node.exe app\bin\autoswitch.mjs task install|status|uninstall` 管理。关闭自启会把你的选择写进 `config.json` 的 `autoStart`，之后升级安装会保持关闭，不会偷偷重新注册；兜底的「启动」文件夹快捷方式也会一并清掉。
 
 安装包没有代码签名，首次运行可能触发 SmartScreen 提示；安装包本身使用 Windows 自带的 IExpress 制作。安装器结束时会弹出一个确认框，点击确定即可（IExpress 没有可选勾选框，所以「启动软件」就是默认行为）。
 

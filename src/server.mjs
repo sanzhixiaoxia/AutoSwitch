@@ -81,6 +81,7 @@ function publicConfig(config) {
   return {
     port: config.port,
     autoClaim: config.autoClaim,
+    autoStart: config.autoStart,
     intervalMinutes: config.intervalMinutes,
     claimDelayMs: config.claimDelayMs,
   };
@@ -176,7 +177,17 @@ function routeAccountId(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function createServer({ store, log, engine, scheduler, port, taskStatusFn = taskStatus, syncAllFn = syncAll }) {
+export function createServer({
+  store,
+  log,
+  engine,
+  scheduler,
+  port,
+  taskStatusFn = taskStatus,
+  installTaskFn = installTask,
+  uninstallTaskFn = uninstallTask,
+  syncAllFn = syncAll,
+}) {
   const taskCache = { at: 0, value: { supported: true, installed: false } };
   const refreshTask = (force = false) => {
     if (!force && Date.now() - taskCache.at < 60_000) return taskCache.value;
@@ -466,7 +477,8 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
 
         if (pathname === "/api/task/install" && method === "POST") {
           const entry = path.resolve(HERE, "..", "bin", "autoswitch.mjs");
-          const result = installTask({ home: store.home, entry });
+          const result = installTaskFn({ home: store.home, entry });
+          store.updateConfig({ autoStart: true });
           taskCache.at = 0;
           const task = refreshTask(true);
           recordSystemEvent(log, { status: "task", message: "已安装开机自启计划任务" });
@@ -474,7 +486,8 @@ export function createServer({ store, log, engine, scheduler, port, taskStatusFn
         }
 
         if (pathname === "/api/task/uninstall" && method === "POST") {
-          const result = uninstallTask();
+          const result = uninstallTaskFn();
+          store.updateConfig({ autoStart: false });
           taskCache.at = 0;
           const task = refreshTask(true);
           recordSystemEvent(log, { status: "task", message: "已移除开机自启计划任务" });

@@ -269,8 +269,8 @@ POST /v2/billing/meter/get-user-resource         {...} 旧版额度包
 | POST | `/api/login/start` | `{ provider: "qoder"|"qoder-cn" }` |
 | GET | `/api/login/poll?sessionId=` | 轮询设备码登录 |
 | GET | `/api/logs?limit=&types=` | 记录 |
-| PUT | `/api/config` | `autoClaim`、`intervalMinutes`、`claimDelayMs`、`port` |
-| POST | `/api/task/install` / `uninstall` | 开机自启 |
+| PUT | `/api/config` | `autoClaim`、`autoStart`、`intervalMinutes`、`claimDelayMs`、`port` |
+| POST | `/api/task/install` / `uninstall` | 开机自启，同时写 `config.autoStart`；安装器升级时读到 `false` 就保持关闭 |
 | GET | `/api/update` | 读取缓存的更新检查结果 |
 | POST | `/api/update/check` | 强制检查 GitHub 最新 Release |
 | POST | `/api/backup` | 创建密码加密备份（返回 `.asbackup` 下载） |

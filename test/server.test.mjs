@@ -253,3 +253,51 @@ test("切换失败要写进记录，不能只弹一下就没了", async () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("开机自启：默认开着，手动关掉要写进配置", async () => {
+  const home = tempHome();
+  const store = new Store({ home }).init();
+  store.upsertAccount({ provider: "qoder", uid: "autostart-user", name: "自启测试", token: "dt-x" });
+  assert.equal(store.config.autoStart, true, "新装就应该默认开机自启");
+  let installed = true;
+  const scheduler = {
+    state: () => ({ autoClaim: false, intervalMinutes: 120, running: false, autoRunning: false, busy: false, lastRun: null, nextRunAt: null, nextRunAtLocal: null, lastError: null }),
+    defer() {},
+    applyConfig() {},
+  };
+  const engine = { busy: false, async claimAll() { return { ok: true, summary: {}, results: [] }; }, async refreshStatuses() { return { ok: true, results: [] }; } };
+  const app = createServer({
+    store,
+    log: new LogStore(home),
+    engine,
+    scheduler,
+    port: 0,
+    taskStatusFn: () => ({ supported: true, installed }),
+    installTaskFn: () => { installed = true; return { installed: true, task: "AutoSwitch" }; },
+    uninstallTaskFn: () => { installed = false; return { installed: false, task: "AutoSwitch" }; },
+    syncAllFn: () => {},
+  });
+  const post = async (url, path) => {
+    const response = await fetch(`${url}/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-autoswitch": "1" },
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const { url } = await app.start();
+
+    const off = await post(url, "api/task/uninstall");
+    assert.equal(off.status, 200);
+    assert.equal(off.body.state.task.installed, false);
+    assert.equal(off.body.state.config.autoStart, false, "关掉之后配置里要记住这个选择");
+    assert.equal(new Store({ home }).init().config.autoStart, false, "重启服务后仍然是关");
+
+    const on = await post(url, "api/task/install");
+    assert.equal(on.status, 200);
+    assert.equal(on.body.state.config.autoStart, true);
+  } finally {
+    await app.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

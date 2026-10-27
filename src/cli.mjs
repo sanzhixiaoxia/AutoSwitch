@@ -500,6 +500,7 @@ async function commandTask(args) {
   const { store } = init();
   if (action === "install") {
     const result = installTask({ home: store.home, entry: ENTRY });
+    store.updateConfig({ autoStart: true });
     console.log(`已安装开机自启：${result.task}`);
     console.log(`启动器：${result.launcher}`);
     console.log(`Node：${result.node}`);
@@ -507,6 +508,7 @@ async function commandTask(args) {
   }
   if (action === "uninstall") {
     uninstallTask();
+    store.updateConfig({ autoStart: false });
     console.log("已移除开机自启计划任务。");
     return;
   }

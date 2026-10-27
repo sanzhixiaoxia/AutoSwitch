@@ -38,7 +38,9 @@
   "node.exe" "app\bin\autoswitch.mjs" task install
   "node.exe" "app\bin\autoswitch.mjs" task status
   "node.exe" "app\bin\autoswitch.mjs" task uninstall
-  也可以在网页面板「设置」中点击「安装开机自启」。
+  也可以在软件「设置 → 开机自启」里用开关开启或关闭。
+  关闭时会把选择写进 config.json 的 autoStart，之后的版本升级会保持关闭，
+  不再自动重新注册；同时清掉「启动」文件夹里的兜底快捷方式。
   计划任务注册失败时，安装器改在「启动」文件夹放 AutoSwitch.lnk 兜底。
 
 卸载：
@@ -49,6 +51,11 @@
 说明：
   账号凭据使用 Windows DPAPI + AES-256-GCM 保存在本机，
   网页面板只监听 127.0.0.1。
+
+装完没有窗口：
+  安装器启动 AutoSwitch.exe 前会清掉 ELECTRON_RUN_AS_NODE。
+  如果你是自己在别的 Electron 工具的终端里手动起它，带上这个变量时
+  exe 会被当成纯 Node 直接退出且不报错；先 unset 再启动，或双击桌面快捷方式。
 
 从旧版 CreditPilot 升级：
   安装器会停止旧进程并移除旧开始菜单/旧计划任务。

@@ -703,21 +703,21 @@ function renderSettings() {
     </section>
 
     <section class="setting-card">
-      <div class="panel-head"><div class="panel-title">${icon("power")}<h2>开机自启</h2></div>${badge(taskInstalled ? "ok" : "idle", taskInstalled ? "已安装" : "未安装")}</div>
+      <div class="panel-head"><div class="panel-title">${icon("power")}<h2>开机自启</h2></div>${badge(taskInstalled ? "ok" : "idle", taskInstalled ? "已开启" : "已关闭")}</div>
       <div class="panel-body">
-        <p class="modal-copy" style="margin:0">安装后会在当前 Windows 用户登录时静默启动本机服务，不需要打开浏览器。计划任务只运行本项目的 Node 进程，不申请管理员权限。</p>
+        <div class="field">
+          <div class="field-label"><strong>登录后自动启动</strong><span>在当前 Windows 用户登录时静默启动本机服务，不需要打开浏览器。计划任务只运行本项目的 Node 进程，不申请管理员权限。关掉只撤销自启注册，账号库和领取记录都保留，之后的版本升级也不会再自动打开。</span></div>
+          <button class="switch ${taskInstalled ? "on" : ""}" data-action="toggle-autostart" aria-label="切换开机自启" ${app.busy ? "disabled" : ""}></button>
+        </div>
         <div class="kv-list">
           <div class="kv"><span>任务名称</span><strong>AutoSwitch</strong></div>
           <div class="kv"><span>当前状态</span><strong>${esc(task?.state || (taskInstalled ? "已注册" : "未注册"))}</strong></div>
           <div class="kv"><span>上次运行</span><strong>${esc(task?.lastRun || "—")}</strong></div>
         </div>
         <div class="actions" style="display:flex;gap:8px">
-          ${taskInstalled
-            ? `<button class="btn danger" data-action="uninstall-task" ${app.busy ? "disabled" : ""}>${icon("trash")}移除自启</button>`
-            : `<button class="btn primary" data-action="install-task" ${app.busy ? "disabled" : ""}>${icon("power")}安装开机自启</button>`}
           <button class="btn" data-action="doctor" ${app.busy ? "disabled" : ""}>${icon("shield")}运行诊断</button>
         </div>
-        <div class="info-box warn">${icon("info")}<div>如果你的系统策略禁止注册计划任务，可以手动运行 <span class="code-path">autoswitch start --no-open</span>，或用任务计划程序指向同样的命令。</div></div>
+        <div class="info-box warn">${icon("info")}<div>装机版默认开启。若系统策略禁止注册计划任务，安装器会退回「启动」文件夹快捷方式，关闭自启时两种都会清掉；也可以手动运行 <span class="code-path">autoswitch start --no-open</span>。</div></div>
       </div>
     </section>
 
@@ -1124,43 +1124,25 @@ async function showDoctor() {
   }
 }
 
-async function installTask() {
+async function toggleAutoStart() {
+  const installed = Boolean(app.state?.task?.installed);
+  const endpoint = installed ? "/api/task/uninstall" : "/api/task/install";
   const confirmed = await confirmAction({
-    title: "安装开机自启？",
-    message: "会在当前 Windows 用户下注册名为 <strong>AutoSwitch</strong> 的登录时计划任务，静默运行本机服务。以后可在同一位置移除。",
-    confirmText: "安装",
+    title: installed ? "关闭开机自启？" : "开启开机自启？",
+    message: installed
+      ? "会注销计划任务 <strong>AutoSwitch</strong>，并清掉「启动」文件夹里的备用快捷方式。账号库和领取记录不动，之后的版本升级也不会再自动打开自启。"
+      : "会在当前 Windows 用户下注册名为 <strong>AutoSwitch</strong> 的登录时计划任务，静默运行本机服务，不申请管理员权限。",
+    confirmText: installed ? "关闭自启" : "开启自启",
+    tone: installed ? "bad" : "warn",
     iconName: "power",
   });
   if (!confirmed || app.busy) return;
-  setBusy(true, "正在注册计划任务…");
+  setBusy(true, installed ? "正在撤销开机自启…" : "正在注册开机自启…");
   try {
-    const data = await api("/api/task/install", { method: "POST" });
+    const data = await api(endpoint, { method: "POST" });
     app.state = data.state;
     await refreshData({ silent: true });
-    toast("已安装开机自启", "ok");
-  } catch (error) {
-    toast(error.message, "bad");
-  } finally {
-    setBusy(false);
-    render();
-  }
-}
-
-async function uninstallTask() {
-  const confirmed = await confirmAction({
-    title: "移除开机自启？",
-    message: "只会删除计划任务，不会删除账号库或领取记录。",
-    confirmText: "移除",
-    tone: "bad",
-    iconName: "trash",
-  });
-  if (!confirmed || app.busy) return;
-  setBusy(true, "正在移除计划任务…");
-  try {
-    const data = await api("/api/task/uninstall", { method: "POST" });
-    app.state = data.state;
-    await refreshData({ silent: true });
-    toast("已移除开机自启", "ok");
+    toast(installed ? "已关闭开机自启，下次登录不再自动启动" : "已开启开机自启，登录后自动启动本机服务", "ok");
   } catch (error) {
     toast(error.message, "bad");
   } finally {
@@ -1259,8 +1241,7 @@ function bindEvents() {
       if (!Number.isFinite(value) || value < 0) return toast("账号间隔不能小于 0", "warn");
       return updateConfig({ claimDelayMs: Math.round(value) }, "账号间隔已保存");
     }
-    if (action === "install-task") return installTask();
-    if (action === "uninstall-task") return uninstallTask();
+    if (action === "toggle-autostart") return toggleAutoStart();
     if (action === "doctor") return showDoctor();
     if (action === "check-update") return runUpdateCheck();
     if (action === "create-backup") return openBackupModal();

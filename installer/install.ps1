@@ -143,7 +143,17 @@ if (-not $NoDesktopShortcut) {
 }
 
 $startupDir = [Environment]::GetFolderPath('Startup')
-if (-not $NoAutoStart) {
+# 用户在软件里手动关过开机自启，升级安装就别再偷偷给他打开。
+$autoStartPref = $true
+$configPath = Join-Path $env:LOCALAPPDATA 'AutoSwitch\config.json'
+if (Test-Path $configPath) {
+  try {
+    if ((Get-Content -LiteralPath $configPath -Raw) -match '"autoStart"\s*:\s*false') { $autoStartPref = $false }
+  } catch {}
+}
+if (-not $NoAutoStart -and -not $autoStartPref) {
+  Write-Host '开机自启：保持你在软件里关闭的状态，本次不注册（可在「设置 → 开机自启」重新开启）。'
+} elseif (-not $NoAutoStart) {
   $taskFailed = $true
   try {
     $taskOutput = (& $NodePath $CliPath task install 2>&1 | Out-String)
@@ -168,6 +178,9 @@ if (-not $NoAutoStart) {
 
 if (-not $NoLaunch) {
   try {
+    # 在别的 Electron 工具（Qoder 等）的终端里跑安装时，环境会带着 ELECTRON_RUN_AS_NODE=1，
+    # 那样 AutoSwitch.exe 会被当成纯 Node 解释器、立刻退出且不打印任何东西，用户看到的是「装完没窗口」。
+    Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir
     Write-Host '已打开 AutoSwitch 窗口（后台服务未运行时会自动拉起）。'
   } catch {
